@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "bedrock-miner-extra",
+	"version": "${version}",
+	"name": "Bedrock Miner Extra",
+	"description": "Pure-client mod: automates the headless-piston trick (MC-27056) so bedrock can be broken in survival without instant mining. Place a piston against bedrock, power it with a lever or redstone torch, then mine the piston at any speed - the mod instantly sends the packets to replace it with a fresh piston facing the bedrock and cut the power.",
+	"authors": [
+		"CXY"
+	],
+	"license": "CC0-1.0",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.cxy.bedrockminer.BedrockMinerExtraClient"
+		]
+	},
+	"mixins": [
+		"bedrock-miner-extra.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
