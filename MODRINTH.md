@@ -44,7 +44,7 @@ Default whitelist: `minecraft:bedrock`.
 
 ## Compatibility
 
-- Minecraft **26.1.2**, Fabric Loader ≥ 0.19.3, Fabric API
+- Minecraft **26.2 / 26.1 / 26.1.2 / 1.21.11 / 1.21.1 / 1.21 / 1.20.6 / 1.20.5 / 1.20.1**, Fabric Loader ≥ 0.19.3, Fabric API
 - Client-side only; works in singleplayer, LAN, and on servers (the server does not need the mod installed)
 
 ## License
