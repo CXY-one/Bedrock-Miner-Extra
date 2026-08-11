@@ -1,11 +1,12 @@
 {
 	"required": true,
 	"package": "dev.cxy.bedrockminer.mixin",
-	"compatibilityLevel": "JAVA_25",
+	"compatibilityLevel": "${mixin_java}",
 	"client": [
 		"MultiPlayerGameModeMixin",
 		"MultiPlayerGameModeAccessor",
-		"EntityAccessor"
+		"EntityAccessor",
+		"InventoryAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

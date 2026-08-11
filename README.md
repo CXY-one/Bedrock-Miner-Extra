@@ -1,6 +1,8 @@
 # Bedrock Miner Extra
 
-Fabric **纯客户端**模组（Minecraft Java **26.1.2**）：在生存模式中利用原版"无头活塞"特性（Mojang bug **MC-27056**）破坏基岩——**不需要急迫效果、不需要高等级镐**，普通速度挖活塞即可。
+Fabric **纯客户端**模组：在生存模式中利用原版"无头活塞"特性（Mojang bug **MC-27056**）破坏基岩——**不需要急迫效果、不需要高等级镐**，普通速度挖活塞即可。
+
+**支持版本**：26.2 / 26.1 / 26.1.2、1.21.11 / 1.21.1 / 1.21、1.20.6 / 1.20.5 / 1.20.1（Stonecutter 多版本构建，一套源码）。
 
 ## 特点
 
@@ -66,3 +68,16 @@ Fabric **纯客户端**模组（Minecraft Java **26.1.2**）：在生存模式�
 - `BedrockBreaker` — 纯客户端核心：判定触发条件（活塞能伸出 + 旁有基岩 + 带电）、发包序列（断信号 → 切活塞 → 放置朝向基岩的新活塞）；
 - `MultiPlayerGameModeMixin` — 时序钩子：在客户端挖掘完成前先发"断信号"包，再在挖掘完成包（`STOP_DESTROY_BLOCK`）发送之后紧跟"放新活塞"的包，保证服务器同刻按"断信号 → 挖活塞 → 放新活塞"处理；
 - `EntityAccessor` / `MultiPlayerGameModeAccessor` — 26.1.2 私有化字段（视角、挖掘目标/进度）的访问器。
+
+
+## 多版本构建（Stonecutter）
+
+本项目用 **Stonecutter** 维护多版本：一套源码，`//? if` 条件化版本差异，按版本生成并构建。
+
+- **构建指定版本**：`./gradlew :<版本>:build`，如 `./gradlew :1.21.11:build`、`./gradlew :26.2:build`
+- **构建当前 active 版本**：`./gradlew build`（active 版本 = `stonecutter.gradle.kts` 中 `stonecutter active "26.1.2"`）
+- **版本列表**：`versions.json`；各版本依赖（fabric-api 等）在 `stonecutter.properties.toml`
+- **产物**：`versions/<版本>/build/libs/bedrock-miner-extra-<版本号>+<MC版本>.jar`
+- **切换开发版本**：改 `stonecutter.gradle.kts` 的 `stonecutter active "..."` 与 `versions.json` 的 `"vcs"`
+
+> 编译要求：Java 25（26.x 目标）/ Java 21（1.20.5~1.21.x）/ Java 17（1.20.1）；本项目 `gradle.properties` 已指定 `org.gradle.java.home`。

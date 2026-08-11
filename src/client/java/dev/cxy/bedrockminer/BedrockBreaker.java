@@ -15,7 +15,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+//? if >=1.21.11 {
 import net.minecraft.resources.Identifier;
+//?} else {
+/*import net.minecraft.resources.ResourceLocation;*/
+//?}
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.level.Level;
@@ -28,6 +32,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 import dev.cxy.bedrockminer.mixin.EntityAccessor;
+import dev.cxy.bedrockminer.mixin.InventoryAccessor;
 import dev.cxy.bedrockminer.mixin.MultiPlayerGameModeAccessor;
 
 import org.slf4j.Logger;
@@ -157,9 +162,19 @@ public final class BedrockBreaker {
 	}
 
 	private static String normalizeBlockId(String id) {
+		//? if >=1.21.11 {
 		Identifier loc = id.indexOf(':') >= 0
 			? Identifier.tryParse(id)
 			: Identifier.fromNamespaceAndPath("minecraft", id);
+		//?} else if >=1.21 {
+		/*ResourceLocation loc = id.indexOf(':') >= 0
+			? ResourceLocation.tryParse(id)
+			: ResourceLocation.fromNamespaceAndPath("minecraft", id);*/
+		//?} else {
+		/*ResourceLocation loc = id.indexOf(':') >= 0
+			? ResourceLocation.tryParse(id)
+			: new ResourceLocation("minecraft", id);*/
+		//?}
 		if (loc == null || !BuiltInRegistries.BLOCK.containsKey(loc)) {
 			return null;
 		}
@@ -299,7 +314,7 @@ public final class BedrockBreaker {
 			return;
 		}
 		float[] yp = getYawPitch(scene.bedrockDir());
-		mc.player.connection.send(new ServerboundMovePlayerPacket.Rot(yp[0], yp[1], mc.player.onGround(), false));
+		mc.player.connection.send(rotPacket(yp[0], yp[1], mc.player.onGround()));
 		earlyRotSent = true;
 		LOGGER.info("Bedrock Miner Extra: early rotation sent for horizontal facing {}", scene.bedrockDir());
 	}
@@ -450,7 +465,7 @@ public final class BedrockBreaker {
 		if (slot < 0) {
 			return false;
 		}
-		inventory.setSelectedSlot(slot);
+		((InventoryAccessor) inventory).bedrockMinerExtra$setSelected(slot);
 		player.connection.send(new ServerboundSetCarriedItemPacket(slot));
 		return true;
 	}
@@ -479,15 +494,27 @@ public final class BedrockBreaker {
 			accessor.bedrockMinerExtra$setXRot(pitch);
 			accessor.bedrockMinerExtra$setYRot(yaw);
 			player.yHeadRot = yaw;
-			player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), false));
+			player.connection.send(rotPacket(yaw, pitch, player.onGround()));
 			gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
 		} finally {
 			accessor.bedrockMinerExtra$setXRot(oldXRot);
 			accessor.bedrockMinerExtra$setYRot(oldYRot);
 			player.yHeadRot = oldYHeadRot;
 			// Restore the server-side view so the player's actual view is kept.
-			player.connection.send(new ServerboundMovePlayerPacket.Rot(oldYRot, oldXRot, player.onGround(), false));
+			player.connection.send(rotPacket(oldYRot, oldXRot, player.onGround()));
 		}
+	}
+
+	/**
+	 * Builds the rotation packet; the constructor gained a 4th argument in
+	 * 1.21.11 (horizontalCollision), before that it was (yaw, pitch, onGround).
+	 */
+	private static ServerboundMovePlayerPacket rotPacket(float yaw, float pitch, boolean onGround) {
+		//? if >=1.21.11 {
+		return new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround, false);
+		//?} else {
+		/*return new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround);*/
+		//?}
 	}
 
 	/** Returns {yaw, pitch} that make the server place a piston with the given facing. */

@@ -71,17 +71,30 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 		return 1;
 	}
 
+	/**
+	 * Chat messages: 26.x uses {@code sendSystemMessage}, 1.21.11 and older use
+	 * {@code displayClientMessage(component, false)} (sendSystemMessage was
+	 * removed in 1.21.11 and displayClientMessage removed in 26.x).
+	 */
+	private static void sendChatMessage(LocalPlayer player, Component message) {
+		//? if >=26.1 {
+		player.sendSystemMessage(message);
+		//?} else {
+		/*player.displayClientMessage(message, false);*/
+		//?}
+	}
+
 	private static void sendEnablePrompt(Minecraft client) {
 		LocalPlayer player = client.player;
 		if (player == null) {
 			return;
 		}
-		player.sendSystemMessage(Component.literal("Bedrock Miner Extra 已启动！"));
+		sendChatMessage(player, Component.literal("Bedrock Miner Extra 已启动！"));
 		// Integrated server is a singleplayer world; a remote connection means
 		// an actual multiplayer server.
 		if (client.getSingleplayerServer() == null) {
-			player.sendSystemMessage(Component.literal("看起来你好像是在服务器使用Bedrock Miner Extra？").withStyle(ChatFormatting.GRAY));
-			player.sendSystemMessage(Component.literal("在使用本mod前请先征询其他玩家的意见。").withStyle(ChatFormatting.GRAY));
+			sendChatMessage(player, Component.literal("看起来你好像是在服务器使用Bedrock Miner Extra？").withStyle(ChatFormatting.GRAY));
+			sendChatMessage(player, Component.literal("在使用本mod前请先征询其他玩家的意见。").withStyle(ChatFormatting.GRAY));
 		}
 	}
 
@@ -90,7 +103,7 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 		if (player == null) {
 			return;
 		}
-		player.sendSystemMessage(Component.literal("Bedrock Miner Extra 已关闭！"));
+		sendChatMessage(player, Component.literal("Bedrock Miner Extra 已关闭！"));
 	}
 
 	private static int whitelistAdd(CommandContext<FabricClientCommandSource> ctx) {
