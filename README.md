@@ -1,5 +1,7 @@
 # Bedrock Miner Extra
 
+**[English](README.md) | [简体中文](README_zh-CN.md)**
+
 A **client-side** Fabric mod that lets you break bedrock in survival using the **vanilla headless-piston trick** (Mojang bug **MC-27056**). Mine the piston at **any speed** — slow hand-mining *or* instant-mining with an Efficiency V pickaxe + Haste II both work: the mod handles both vanilla mining paths at the `MultiPlayerGameMode.destroyBlock` entry point. A built-in **auto mode** left-clicks bedrock to place the piston + lever and break it for you, with a 5-slot queue.
 
 **Supported versions**: 26.2 / 26.1 / 26.1.2, 1.21.11 / 1.21.1 / 1.21, 1.20.6 / 1.20.5 / 1.20.1 (one source tree, Stonecutter multi-version build).
