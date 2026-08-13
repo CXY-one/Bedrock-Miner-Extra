@@ -4,6 +4,7 @@
 	"compatibilityLevel": "${mixin_java}",
 	"client": [
 		"MultiPlayerGameModeMixin",
+		"MinecraftMixin",
 		"MultiPlayerGameModeAccessor",
 		"EntityAccessor",
 		"InventoryAccessor"

@@ -18,4 +18,13 @@ public interface MultiPlayerGameModeAccessor {
 
 	@Accessor("destroyProgress")
 	float bedrockMinerExtra$getDestroyProgress();
+
+	@Accessor("destroyDelay")
+	int bedrockMinerExtra$getDestroyDelay();
+
+	@Accessor("destroyDelay")
+	void bedrockMinerExtra$setDestroyDelay(int destroyDelay);
+
+	@Accessor("isDestroying")
+	boolean bedrockMinerExtra$getIsDestroying();
 }

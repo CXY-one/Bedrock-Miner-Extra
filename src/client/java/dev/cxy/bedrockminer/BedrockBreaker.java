@@ -29,11 +29,11 @@ import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import dev.cxy.bedrockminer.mixin.EntityAccessor;
 import dev.cxy.bedrockminer.mixin.InventoryAccessor;
-import dev.cxy.bedrockminer.mixin.MultiPlayerGameModeAccessor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,11 +55,13 @@ import java.util.Set;
  *     so the piston extends;
  *   - mine the piston at any speed.
  *
- * When the piston is mined, this mod sends - around the mining-completion
- * packet - the following, so the server handles them in one tick: cut the power
- * first (switch the lever / break the torch), then place a fresh piston FACING
- * the whitelisted block. The vanilla bug then replaces that block with a piston
- * head.
+ * When the piston is mined, this mod hooks {@code MultiPlayerGameMode.destroyBlock}
+ * (which both the normal progress-full path and the instant-mining path go
+ * through): it captures the scene and cuts the power first (switch the lever),
+ * then - right after the break packet (START/STOP_DESTROY_BLOCK) is sent by
+ * startPrediction - it places a fresh piston FACING the whitelisted block. The
+ * server processes them in one tick; the vanilla bug then replaces that block
+ * with a piston head.
  *
  * Horizontal facings: the server derives the piston facing from the player
  * view, and the view yaw propagates with a one-tick delay (yHeadRot). For
@@ -98,12 +100,40 @@ public final class BedrockBreaker {
 	// Whether the mod is enabled (toggled with /bedrockMinerExtra).
 	private static boolean enabled = true;
 
+	// Whether auto mode is enabled (toggled with /bedrockMinerExtra auto).
+	private static boolean autoEnabled = false;
+
 	// Blocks that can be broken with the trick (default: bedrock only).
 	private static final Set<String> blockWhitelist = new LinkedHashSet<>(DEFAULT_WHITELIST);
+
+	// Auto mode knows exactly which bedrock it targets (targetPos - pistonPos);
+	// capture() prefers this direction over its own vertical-first search, so
+	// the replacement piston faces the intended bedrock, not a neighbouring one.
+	private static Direction expectedBedrockDir;
+
+	public static void setExpectedBedrockDir(Direction dir) {
+		expectedBedrockDir = dir;
+	}
 
 	// True once we sent the early rotation packet for the current mining
 	// (horizontal facing fix); reset when the mining completes.
 	private static boolean earlyRotSent = false;
+	private static BlockPos earlyRotPos;
+
+	// True while we cut the lever power inside destroyBlock. The lever
+	// useItemOn itself goes through startPrediction; its RETURN must NOT
+	// trigger the fresh-piston placement (that only runs after the actual
+	// break packet START/STOP has been sent).
+	private static boolean inCutPower = false;
+
+	// Fresh-piston protection: after we place the replacement piston, vanilla
+	// may keep re-mining the same spot (instant-mining path re-runs
+	// startDestroyBlock because destroyBlockPos was never set; the slow path
+	// re-accumulates progress a few ticks later). We block that for a short
+	// window so the fresh piston is not mined away. Wall clock, not tick-based,
+	// so it works identically across versions.
+	private static BlockPos protectedPos;
+	private static long protectedUntilMs;
 
 	private BedrockBreaker() {
 	}
@@ -118,6 +148,12 @@ public final class BedrockBreaker {
 
 	public static void setEnabled(boolean value) {
 		enabled = value;
+		if (!value) {
+			// Turning the mod off also turns auto mode off: auto mode cannot
+			// run without the manual headless flow (the destroyBlock hooks
+			// cut the power and place the fresh piston).
+			autoEnabled = false;
+		}
 		saveConfig();
 		LOGGER.info("Bedrock Miner Extra: {}", enabled ? "ON" : "OFF");
 	}
@@ -125,6 +161,31 @@ public final class BedrockBreaker {
 	public static boolean toggle() {
 		setEnabled(!enabled);
 		return enabled;
+	}
+
+	// ------------------------------------------------------------------
+	// Auto mode switch
+	// ------------------------------------------------------------------
+
+	public static boolean isAutoEnabled() {
+		return autoEnabled;
+	}
+
+	public static void setAutoEnabled(boolean value) {
+		autoEnabled = value;
+		if (value) {
+			// Auto mode relies on the manual headless flow (the destroyBlock
+			// hooks cut the power and place the fresh piston), so keep the
+			// main switch on while auto mode is on.
+			enabled = true;
+		}
+		saveConfig();
+		LOGGER.info("Bedrock Miner Extra: auto mode {}", autoEnabled ? "ON" : "OFF");
+	}
+
+	public static boolean toggleAuto() {
+		setAutoEnabled(!autoEnabled);
+		return autoEnabled;
 	}
 
 	// ------------------------------------------------------------------
@@ -181,7 +242,7 @@ public final class BedrockBreaker {
 		return loc.toString();
 	}
 
-	private static boolean isWhitelisted(Block block) {
+	public static boolean isWhitelisted(Block block) {
 		return blockWhitelist.contains(BuiltInRegistries.BLOCK.getKey(block).toString());
 	}
 
@@ -195,6 +256,9 @@ public final class BedrockBreaker {
 				JsonObject obj = JsonParser.parseString(Files.readString(CONFIG_PATH)).getAsJsonObject();
 				if (obj.has("enabled")) {
 					enabled = obj.get("enabled").getAsBoolean();
+				}
+				if (obj.has("autoEnabled")) {
+					autoEnabled = obj.get("autoEnabled").getAsBoolean();
 				}
 				if (obj.has("blockWhitelist") && obj.get("blockWhitelist").isJsonArray()) {
 					blockWhitelist.clear();
@@ -219,6 +283,7 @@ public final class BedrockBreaker {
 			Files.createDirectories(CONFIG_PATH.getParent());
 			JsonObject obj = new JsonObject();
 			obj.addProperty("enabled", enabled);
+			obj.addProperty("autoEnabled", autoEnabled);
 			JsonArray arr = new JsonArray();
 			for (String id : blockWhitelist) {
 				arr.add(id);
@@ -234,7 +299,18 @@ public final class BedrockBreaker {
 	// Hooks invoked from MultiPlayerGameModeMixin
 	// ------------------------------------------------------------------
 
-	/** Called at the HEAD of {@code MultiPlayerGameMode.destroyBlock}. */
+	/**
+	 * Called at the HEAD of {@code MultiPlayerGameMode.destroyBlock}. Both the
+	 * slow path (progress full in continueDestroyBlock) and the instant-mining
+	 * path (startDestroyBlock's insta-mine special case) go through
+	 * destroyBlock, so this is the single place where we capture the scene AND
+	 * cut the power FIRST - the headless-piston trick needs the piston to be
+	 * mined while un-powered but still extended.
+	 *
+	 * The lever useItemOn itself goes through startPrediction; its RETURN is
+	 * guarded by {@link #inCutPower}, so the fresh-piston placement only runs
+	 * after the actual break packet (START/STOP) has been sent.
+	 */
 	public static void onBlockBreakStarted(BlockPos pos) {
 		if (!enabled) {
 			pendingScene = null;
@@ -246,77 +322,82 @@ public final class BedrockBreaker {
 			pendingScene = null;
 			return;
 		}
+		// Already handling a scene (defensive; destroyBlock is not re-entered
+		// within one mining in practice).
+		if (pendingScene != null) {
+			return;
+		}
 		BlockState state = level.getBlockState(pos);
 		if (state.is(Blocks.PISTON)) {
-			LOGGER.info("Bedrock Miner Extra: mined piston detected at {} (state {})", pos, state);
+			// LOGGER.info("Bedrock Miner Extra: mined piston detected at {} (state {})", pos, state);
 		}
 		Scene scene = capture(level, pos, state, true);
 		if (scene != null) {
 			pendingScene = scene;
+			earlyRotSent = false;
+			inCutPower = true;
+			try {
+				cutPower(mc, scene);
+			} finally {
+				inCutPower = false;
+			}
 		}
 	}
 
 	/**
-	 * Called right before the mining-completion packet is sent (progress full).
-	 * Captures the scene while the piston is still present, cuts the power
-	 * FIRST so the piston is un-powered (retracting) when it gets mined - the
-	 * headless-piston trick needs the piston to be mined in that state.
+	 * Called at the RETURN of {@code MultiPlayerGameMode.startPrediction}
+	 * (break packet already sent). Skips the nested startPrediction triggered
+	 * by the lever cut-off inside destroyBlock.
 	 */
-	public static void onBeforeMiningCompleted(BlockPos pos) {
-		if (!enabled) {
-			pendingScene = null;
-			return;
-		}
-		Minecraft mc = Minecraft.getInstance();
-		Level level = mc.level;
-		if (level == null) {
-			pendingScene = null;
-			return;
-		}
-		Scene scene = capture(level, pos, level.getBlockState(pos), true);
-		if (scene != null) {
-			// The lever is switched off BEFORE the piston is mined (useItemOn
-			// does not touch the server destroy progress, and the piston must
-			// be un-powered for the headless-piston trick).
-			cutPower(mc, scene);
-		}
-		pendingScene = scene;
-		earlyRotSent = false;
-	}
-
-	/** Called at the RETURN of {@code MultiPlayerGameMode.startPrediction} (mining packet already sent). */
 	public static void onPredictionPacketSent() {
 		Scene scene = pendingScene;
-		pendingScene = null;
-		if (scene != null && enabled) {
-			placeFreshPiston(scene);
+		if (scene == null || inCutPower || !enabled) {
+			return;
 		}
+		pendingScene = null;
+		placeFreshPiston(scene);
 	}
 
-	/** Client tick: for horizontal facings, send the rotation early so the
-	 *  server view yaw has time to propagate before the piston is placed. */
+	/**
+	 * Client tick: while aiming at a breakable piston with a horizontal bedrock
+	 * neighbour, KEEP re-sending the rotation every tick so the server's
+	 * yHeadRot is (almost) always up to date when the piston gets mined. Instant
+	 * mining has no tick gap, and the server's yHeadRot lags one tick, so the
+	 * rotation must be continuously re-sent while aiming. The view is restored
+	 * once the crosshair leaves the piston.
+	 */
 	public static void onClientTick(Minecraft mc) {
 		if (!enabled || mc.player == null || mc.gameMode == null || mc.level == null) {
 			return;
 		}
-		MultiPlayerGameMode gameMode = mc.gameMode;
-		BlockPos target = ((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$getDestroyBlockPos();
-		if (target == null || target.getY() < 0) {
+		// Auto mode drives its own rotation (MINE_ROTATE); don't interfere.
+		if (AutoBreaker.isBusy()) {
 			return;
 		}
-		BlockState state = mc.level.getBlockState(target);
-		Scene scene = capture(mc.level, target, state, false);
+		HitResult hit = mc.hitResult;
+		if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+			restoreViewIfNeeded(mc);
+			return;
+		}
+		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
+		Scene scene = capture(mc.level, pos, mc.level.getBlockState(pos), false);
 		if (scene == null || scene.bedrockDir().getAxis() == Direction.Axis.Y) {
-			return;
-		}
-		float progress = ((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$getDestroyProgress();
-		if (progress < 0.5F || earlyRotSent) {
+			restoreViewIfNeeded(mc);
 			return;
 		}
 		float[] yp = getYawPitch(scene.bedrockDir());
 		mc.player.connection.send(rotPacket(yp[0], yp[1], mc.player.onGround()));
 		earlyRotSent = true;
-		LOGGER.info("Bedrock Miner Extra: early rotation sent for horizontal facing {}", scene.bedrockDir());
+		earlyRotPos = pos;
+	}
+
+	/** Restores the server-side view once the player stops aiming at the piston. */
+	private static void restoreViewIfNeeded(Minecraft mc) {
+		if (earlyRotSent) {
+			mc.player.connection.send(rotPacket(mc.player.getYRot(), mc.player.getXRot(), mc.player.onGround()));
+			earlyRotSent = false;
+			earlyRotPos = null;
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -334,31 +415,37 @@ public final class BedrockBreaker {
 		// blocked by the target; the headless-piston trick requires this state.
 		if (!state.getValue(PistonBaseBlock.EXTENDED)) {
 			if (log) {
-				LOGGER.info("Bedrock Miner Extra: piston at {} is not extended", pos);
+				// LOGGER.info("Bedrock Miner Extra: piston at {} is not extended", pos);
 			}
 			return null;
 		}
 
-		// Find a whitelisted neighbour (fresh piston faces it). Vertical
-		// neighbours are preferred.
+		// Find a whitelisted neighbour (fresh piston faces it). Auto mode
+		// supplies the exact direction to the target bedrock; otherwise the
+		// vertical neighbours are preferred (manual-mode convention).
 		Direction targetDir = null;
-		for (Direction dir : Direction.values()) {
-			if (dir == facing) {
-				continue;
-			}
-			if (isWhitelisted(level.getBlockState(pos.relative(dir)).getBlock())) {
-				if (dir == Direction.UP || dir == Direction.DOWN) {
-					targetDir = dir;
-					break;
+		if (expectedBedrockDir != null && expectedBedrockDir != facing
+			&& isWhitelisted(level.getBlockState(pos.relative(expectedBedrockDir)).getBlock())) {
+			targetDir = expectedBedrockDir;
+		} else {
+			for (Direction dir : Direction.values()) {
+				if (dir == facing) {
+					continue;
 				}
-				if (targetDir == null) {
-					targetDir = dir;
+				if (isWhitelisted(level.getBlockState(pos.relative(dir)).getBlock())) {
+					if (dir == Direction.UP || dir == Direction.DOWN) {
+						targetDir = dir;
+						break;
+					}
+					if (targetDir == null) {
+						targetDir = dir;
+					}
 				}
 			}
 		}
 		if (targetDir == null) {
 			if (log) {
-				LOGGER.info("Bedrock Miner Extra: no whitelisted block adjacent to piston at {} (facing {})", pos, facing);
+				// LOGGER.info("Bedrock Miner Extra: no whitelisted block adjacent to piston at {} (facing {})", pos, facing);
 			}
 			return null;
 		}
@@ -366,7 +453,7 @@ public final class BedrockBreaker {
 		// The piston must currently be powered (i.e. extended).
 		if (!level.hasNeighborSignal(pos)) {
 			if (log) {
-				LOGGER.info("Bedrock Miner Extra: piston at {} is not powered", pos);
+				// LOGGER.info("Bedrock Miner Extra: piston at {} is not powered", pos);
 			}
 			return null;
 		}
@@ -375,7 +462,7 @@ public final class BedrockBreaker {
 		PowerSource power = findPowerSource(level, pos);
 		if (power == null) {
 			if (log) {
-				LOGGER.info("Bedrock Miner Extra: no powered lever within 2 blocks of piston at {}", pos);
+				// LOGGER.info("Bedrock Miner Extra: no powered lever within 2 blocks of piston at {}", pos);
 			}
 			return null;
 		}
@@ -423,7 +510,7 @@ public final class BedrockBreaker {
 		}
 		gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
 			new BlockHitResult(Vec3.atCenterOf(scene.power().pos()), Direction.UP, scene.power().pos(), false));
-		LOGGER.info("Bedrock Miner Extra: cut power at {} (LEVER)", scene.power().pos());
+		// LOGGER.info("Bedrock Miner Extra: cut power at {} (LEVER)", scene.power().pos());
 	}
 
 	/** Places the fresh piston facing the target, after the piston was mined. */
@@ -442,35 +529,57 @@ public final class BedrockBreaker {
 			return;
 		}
 
-		LOGGER.info("Bedrock Miner Extra: placing fresh piston at {} facing {}", scene.pistonPos(), scene.bedrockDir());
+		// LOGGER.info("Bedrock Miner Extra: placing fresh piston at {} facing {}", scene.pistonPos(), scene.bedrockDir());
 
-		// Switch to a piston in the hotbar.
-		if (!switchToPiston(player)) {
-			LOGGER.warn("Bedrock Miner Extra: no piston in hotbar, cannot place replacement");
+		// Prefer a piston in the hotbar (switch to its slot), fall back to a
+		// piston in the offhand (no hotbar switch needed).
+		InteractionHand hand = pistonHand(player);
+		if (hand == null) {
+			LOGGER.warn("Bedrock Miner Extra: no piston in hotbar or offhand, cannot place replacement");
 			return;
 		}
 
-		placePiston(gameMode, player, scene);
+		placePiston(gameMode, player, scene, hand);
+		// Block vanilla from re-mining the fresh piston for a short window.
+		protectFreshPiston(scene.pistonPos());
 	}
 
-	private static boolean switchToPiston(LocalPlayer player) {
+	/**
+	 * Records that the freshly placed piston must not be re-mined by vanilla
+	 * for the next 100 ms (2 ticks) — enough to block the instant-mining path's
+	 * re-run of startDestroyBlock on the next frame.
+	 */
+	private static void protectFreshPiston(BlockPos pos) {
+		protectedPos = pos;
+		protectedUntilMs = System.currentTimeMillis() + 100L;
+	}
+
+	/** True while the fresh piston at pos is protected from vanilla re-mining. */
+	public static boolean isProtected(BlockPos pos) {
+		return protectedPos != null && protectedPos.equals(pos) && System.currentTimeMillis() < protectedUntilMs;
+	}
+
+	/**
+	 * Selects a piston for the replacement: hotbar slot (switches to it) or the
+	 * offhand slot 40 (no hotbar switch). Returns null if the player has no
+	 * piston in either.
+	 */
+	private static InteractionHand pistonHand(LocalPlayer player) {
 		Inventory inventory = player.getInventory();
-		int slot = -1;
 		for (int i = 0; i < Inventory.getSelectionSize(); i++) {
 			if (inventory.getItem(i).is(Blocks.PISTON.asItem())) {
-				slot = i;
-				break;
+				((InventoryAccessor) inventory).bedrockMinerExtra$setSelected(i);
+				player.connection.send(new ServerboundSetCarriedItemPacket(i));
+				return InteractionHand.MAIN_HAND;
 			}
 		}
-		if (slot < 0) {
-			return false;
+		if (inventory.getItem(40).is(Blocks.PISTON.asItem())) {
+			return InteractionHand.OFF_HAND;
 		}
-		((InventoryAccessor) inventory).bedrockMinerExtra$setSelected(slot);
-		player.connection.send(new ServerboundSetCarriedItemPacket(slot));
-		return true;
+		return null;
 	}
 
-	private static void placePiston(MultiPlayerGameMode gameMode, LocalPlayer player, Scene scene) {
+	private static void placePiston(MultiPlayerGameMode gameMode, LocalPlayer player, Scene scene, InteractionHand hand) {
 		Direction facing = scene.bedrockDir();
 		BlockPos pos = scene.pistonPos();
 
@@ -495,13 +604,17 @@ public final class BedrockBreaker {
 			accessor.bedrockMinerExtra$setYRot(yaw);
 			player.yHeadRot = yaw;
 			player.connection.send(rotPacket(yaw, pitch, player.onGround()));
-			gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+			gameMode.useItemOn(player, hand, hitResult);
 		} finally {
+			// Restore the LOCAL view only. The server-side view is left at the
+			// bedrock-facing rotation on purpose: the server's yHeadRot lags
+			// one tick, so restoring it here would make the NEXT placement use
+			// the wrong facing. The client tick keeps re-sending the rotation
+			// while aiming at the piston (or during auto-mining) and restores
+			// the real view when done.
 			accessor.bedrockMinerExtra$setXRot(oldXRot);
 			accessor.bedrockMinerExtra$setYRot(oldYRot);
 			player.yHeadRot = oldYHeadRot;
-			// Restore the server-side view so the player's actual view is kept.
-			player.connection.send(rotPacket(oldYRot, oldXRot, player.onGround()));
 		}
 	}
 
@@ -509,7 +622,7 @@ public final class BedrockBreaker {
 	 * Builds the rotation packet; the constructor gained a 4th argument in
 	 * 1.21.11 (horizontalCollision), before that it was (yaw, pitch, onGround).
 	 */
-	private static ServerboundMovePlayerPacket rotPacket(float yaw, float pitch, boolean onGround) {
+	public static ServerboundMovePlayerPacket rotPacket(float yaw, float pitch, boolean onGround) {
 		//? if >=1.21.11 {
 		return new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround, false);
 		//?} else {
@@ -518,7 +631,7 @@ public final class BedrockBreaker {
 	}
 
 	/** Returns {yaw, pitch} that make the server place a piston with the given facing. */
-	private static float[] getYawPitch(Direction direction) {
+	public static float[] getYawPitch(Direction direction) {
 		float yaw = switch (direction) {
 			case SOUTH -> 180.0F;
 			case EAST -> 90.0F;

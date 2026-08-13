@@ -10,10 +10,12 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
 
 import java.util.Set;
 
@@ -24,6 +26,21 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 		BedrockBreaker.loadConfig();
 		registerCommands();
 		ClientTickEvents.END_CLIENT_TICK.register(BedrockBreaker::onClientTick);
+		ClientTickEvents.END_CLIENT_TICK.register(AutoBreaker::tick);
+		// Auto mode: left-click a whitelisted block to queue it for breaking.
+		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+			if (!world.isClientSide()) {
+				return InteractionResult.PASS;
+			}
+			if (!BedrockBreaker.isAutoEnabled()) {
+				return InteractionResult.PASS;
+			}
+			if (BedrockBreaker.isWhitelisted(world.getBlockState(pos).getBlock())) {
+				AutoBreaker.enqueue(pos);
+				return InteractionResult.FAIL;
+			}
+			return InteractionResult.PASS;
+		});
 		// Show the "started" prompt when joining a world if the mod is on.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			if (BedrockBreaker.isEnabled()) {
@@ -39,6 +56,10 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 				.executes(BedrockMinerExtraClient::toggleSwitch)
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("on").executes(ctx -> setSwitch(ctx, true)))
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("off").executes(ctx -> setSwitch(ctx, false)))
+				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("auto")
+					.executes(BedrockMinerExtraClient::toggleAuto)
+					.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("on").executes(ctx -> setAuto(ctx, true)))
+					.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("off").executes(ctx -> setAuto(ctx, false))))
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("blockWhitelist")
 					.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("add")
 						.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.word())
@@ -69,6 +90,42 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 			sendDisablePrompt(Minecraft.getInstance());
 		}
 		return 1;
+	}
+
+	private static int toggleAuto(CommandContext<FabricClientCommandSource> ctx) {
+		boolean now = BedrockBreaker.toggleAuto();
+		if (now) {
+			sendAutoEnablePrompt(Minecraft.getInstance());
+		} else {
+			sendAutoDisablePrompt(Minecraft.getInstance());
+		}
+		return 1;
+	}
+
+	private static int setAuto(CommandContext<FabricClientCommandSource> ctx, boolean value) {
+		BedrockBreaker.setAutoEnabled(value);
+		if (value) {
+			sendAutoEnablePrompt(Minecraft.getInstance());
+		} else {
+			sendAutoDisablePrompt(Minecraft.getInstance());
+		}
+		return 1;
+	}
+
+	private static void sendAutoEnablePrompt(Minecraft client) {
+		LocalPlayer player = client.player;
+		if (player == null) {
+			return;
+		}
+		sendChatMessage(player, Component.literal("Bedrock Miner Extra 自动模式已开启！左键点击基岩即可自动破基岩。"));
+	}
+
+	private static void sendAutoDisablePrompt(Minecraft client) {
+		LocalPlayer player = client.player;
+		if (player == null) {
+			return;
+		}
+		sendChatMessage(player, Component.literal("Bedrock Miner Extra 自动模式已关闭！"));
 	}
 
 	/**
