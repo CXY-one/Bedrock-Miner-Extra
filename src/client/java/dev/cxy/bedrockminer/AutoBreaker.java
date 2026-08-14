@@ -89,6 +89,12 @@ public final class AutoBreaker {
 		boolean needPlacePiston, boolean needPlaceLever, boolean needPowerLever) {
 	}
 
+	/** findPlacement result: the placement, or null plus whether any candidate
+	 *  spot was skipped because its attach block was powered by a non-lever
+	 *  redstone source (reported to the player). */
+	private record PlacementSearch(Placement placement, boolean poweredBlocked) {
+	}
+
 	private record LeverSpot(BlockPos leverPos, Direction attachDir) {
 	}
 
@@ -230,7 +236,7 @@ public final class AutoBreaker {
 					return;
 				}
 				float[] yp = BedrockBreaker.getYawPitch(extendDir);
-				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], player.onGround()));
+				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(player)));
 				state = State.PLACE_PISTON2;
 			}
 			case PLACE_PISTON2 -> {
@@ -268,7 +274,7 @@ public final class AutoBreaker {
 					return;
 				}
 				float[] yp = BedrockBreaker.getYawPitch(attachDir.getOpposite());
-				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], player.onGround()));
+				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(player)));
 				state = State.PLACE_LEVER2;
 			}
 			case PLACE_LEVER2 -> {
@@ -281,8 +287,7 @@ public final class AutoBreaker {
 			}
 			case POWER_LEVER -> {
 				// The lever is placed un-powered; flip it so the piston extends.
-				gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
-					new BlockHitResult(Vec3.atCenterOf(leverPos), Direction.UP, leverPos, false));
+				useItemOn(gameMode, player, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(leverPos), Direction.UP, leverPos, false));
 				// BedrockBreaker.LOGGER.info("auto: powered lever at {}", leverPos);
 				state = State.WAIT_EXTEND;
 				waitTicks = 0;
@@ -315,7 +320,7 @@ public final class AutoBreaker {
 					return;
 				}
 				float[] yp = BedrockBreaker.getYawPitch(bedrockDir);
-				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], player.onGround()));
+				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(player)));
 				state = State.MINE;
 				mineTicks = 0;
 				miningStarted = false;
@@ -326,7 +331,7 @@ public final class AutoBreaker {
 				// server's yHeadRot lags one tick, so a single early rotation
 				// may still be too late if packets straddle a tick boundary).
 				float[] yp = BedrockBreaker.getYawPitch(bedrockDir);
-				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], player.onGround()));
+				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(player)));
 				if (isBroken(level)) {
 					onSuccess(player);
 					return;
@@ -356,12 +361,11 @@ public final class AutoBreaker {
 						fail(level, player);
 						return;
 					}
-					// BedrockBreaker.LOGGER.info("auto: mine start piston={} state={} mainHand={} destroyProgress={}",
-					// 	pistonPos, pistonState, player.getMainHandItem(),
-					// 	pistonState.getDestroyProgress(player, player.level(), pistonPos));
+					BedrockBreaker.LOGGER.info("auto: mine start piston={} state={} mainHand={}",
+						pistonPos, pistonState, player.getMainHandItem());
 					boolean sdb = gameMode.startDestroyBlock(pistonPos, Direction.UP);
 					miningStarted = true;
-					// BedrockBreaker.LOGGER.info("auto: startDestroyBlock returned {}", sdb);
+					BedrockBreaker.LOGGER.info("auto: startDestroyBlock returned {}", sdb);
 				}
 				boolean cdb = gameMode.continueDestroyBlock(pistonPos, Direction.UP);
 				// Finish fast: once progress is safely above the server's 0.7
@@ -384,19 +388,19 @@ public final class AutoBreaker {
 				}
 				// Debug: per-tick mining state (was used to diagnose the slow-vs-
 				// instant mining sync issues). Re-enable when debugging.
-				// if (mineTicks <= 5 || mineTicks % 20 == 0) {
-				// 	MultiPlayerGameModeAccessor acc = (MultiPlayerGameModeAccessor) gameMode;
-				// 	BedrockBreaker.LOGGER.info("auto: mine tick={} cdb={} destroyDelay={} isDestroying={} destroyPos={} progress={} pistonState={}",
-				// 		mineTicks, cdb, acc.bedrockMinerExtra$getDestroyDelay(),
-				// 		acc.bedrockMinerExtra$getIsDestroying(), acc.bedrockMinerExtra$getDestroyBlockPos(),
-				// 		acc.bedrockMinerExtra$getDestroyProgress(), level.getBlockState(pistonPos));
-				// }
+				if (mineTicks <= 5 || mineTicks % 20 == 0) {
+					MultiPlayerGameModeAccessor acc = (MultiPlayerGameModeAccessor) gameMode;
+					BedrockBreaker.LOGGER.info("auto: mine tick={} cdb={} destroyDelay={} isDestroying={} destroyPos={} progress={} pistonState={}",
+						mineTicks, cdb, acc.bedrockMinerExtra$getDestroyDelay(),
+						acc.bedrockMinerExtra$getIsDestroying(), acc.bedrockMinerExtra$getDestroyBlockPos(),
+						acc.bedrockMinerExtra$getDestroyProgress(), level.getBlockState(pistonPos));
+				}
 			}
 			case VERIFY -> {
 				// The break already happened; wait for the bedrock removal to be
 				// reflected client-side before deciding success/failure.
 				float[] yp = BedrockBreaker.getYawPitch(bedrockDir);
-				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], player.onGround()));
+				player.connection.send(BedrockBreaker.rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(player)));
 				if (isBroken(level)) {
 					onSuccess(player);
 					return;
@@ -421,17 +425,20 @@ public final class AutoBreaker {
 		}
 		targetPos = pos;
 		LocalPlayer player = Minecraft.getInstance().player;
-		Placement placement = findPlacement(level, pos);
-		if (placement == null) {
+		PlacementSearch search = findPlacement(level, pos);
+		if (search.placement() == null) {
 			queue.remove(pos);
 			queued.remove(pos);
 			failedPistonSlots.clear();
 			if (player != null) {
-				showActionBar("Bedrock Miner Extra: 空间不足，无法破基岩（已移除队列）");
+				showActionBar(search.poweredBlocked()
+					? "Bedrock Miner Extra: 位置被红石充能，无法破基岩（已移除队列）"
+					: "Bedrock Miner Extra: 空间不足，无法破基岩（已移除队列）");
 			}
 			state = State.IDLE;
 			return;
 		}
+		Placement placement = search.placement();
 		pistonPos = placement.pistonPos();
 		extendDir = placement.extendDir();
 		leverPos = placement.leverPos();
@@ -465,7 +472,7 @@ public final class AutoBreaker {
 		instantFinishing = false;
 		BedrockBreaker.setExpectedBedrockDir(null);
 		// Restore the server-side view (we kept it facing the bedrock while mining).
-		player.connection.send(BedrockBreaker.rotPacket(player.getYRot(), player.getXRot(), player.onGround()));
+		player.connection.send(BedrockBreaker.rotPacket(player.getYRot(), player.getXRot(), BedrockBreaker.playerOnGround(player)));
 		showActionBar("Bedrock Miner Extra: 破基岩成功");
 		// Clean up the pistons/levers we placed that are now useless.
 		cleanupTicks = 0;
@@ -483,7 +490,7 @@ public final class AutoBreaker {
 		}
 		BedrockBreaker.setExpectedBedrockDir(null);
 		// Restore the server-side view that MINE_ROTATE pre-rotated.
-		player.connection.send(BedrockBreaker.rotPacket(player.getYRot(), player.getXRot(), player.onGround()));
+		player.connection.send(BedrockBreaker.rotPacket(player.getYRot(), player.getXRot(), BedrockBreaker.playerOnGround(player)));
 		miningStarted = false;
 		instantFinishing = false;
 		cleanupTicks = 0;
@@ -501,9 +508,10 @@ public final class AutoBreaker {
 	 * slot, piston head direction (must be air so the piston can extend), lever
 	 * slot. Neighbour faces are tried closest-to-the-player first.
 	 */
-	private static Placement findPlacement(Level level, BlockPos target) {
+	private static PlacementSearch findPlacement(Level level, BlockPos target) {
 		LocalPlayer player = Minecraft.getInstance().player;
 		Vec3 eye = player != null ? new Vec3(player.getX(), player.getY(), player.getZ()) : Vec3.ZERO;
+		boolean sawPowered = false;
 
 		List<Direction> dirs = new ArrayList<>(List.of(Direction.values()));
 		dirs.sort(Comparator.comparingDouble(d -> eye.distanceToSqr(Vec3.atCenterOf(target.relative(d)))));
@@ -525,7 +533,7 @@ public final class AutoBreaker {
 			}
 			Placement reuse = reusePiston(level, target, p, facing, dirs);
 			if (reuse != null) {
-				return reuse;
+				return new PlacementSearch(reuse, false);
 			}
 		}
 
@@ -544,11 +552,13 @@ public final class AutoBreaker {
 				continue;
 			}
 			for (Direction extend : dirs) {
-				if (extend == face) {
-					// Head direction must not point at the target (bedrock would
-					// block the extension).
-					continue;
-				}
+				// The head may point in ANY air direction, including `face`
+				// itself: the target bedrock sits on the piston's -face side,
+				// so a head facing `face` points away from it and can extend
+				// freely (this is the "upward piston" setup on the nether roof,
+				// where the piston sits above the bedrock with its head up).
+				// The air check below naturally rejects the opposite direction
+				// (head pointing at the target).
 				if (playerIntersects(pistonSlot.relative(extend))) {
 					continue;
 				}
@@ -561,16 +571,37 @@ public final class AutoBreaker {
 				BlockPos existingLever = findExistingLever(level, target, pistonSlot);
 				if (existingLever != null) {
 					boolean powered = level.getBlockState(existingLever).getValue(LeverBlock.POWERED);
-					return new Placement(pistonSlot, extend, existingLever, Direction.UP, true, false, !powered);
+					return new PlacementSearch(
+						new Placement(pistonSlot, extend, existingLever, Direction.UP, true, false, !powered), false);
 				}
 				LeverSpot spot = findLeverSpot(level, target, pistonSlot, extend, dirs);
 				if (spot == null) {
 					continue;
 				}
-				return new Placement(pistonSlot, extend, spot.leverPos(), spot.attachDir(), true, true, true);
+				// Reuse an existing lever that already powers the attach block
+				// (e.g. a lever on top of the flat bedrock next to the target,
+				// which findExistingLever cannot see): keep the redstone state
+				// under our control. Honour the lever's on/off state (on = used
+				// directly, off = flipped on by the state machine).
+				BlockPos attachTarget = spot.leverPos().relative(spot.attachDir());
+				BlockPos poweredLever = findLeverOnBlock(level, attachTarget);
+				if (poweredLever != null) {
+					boolean powered = level.getBlockState(poweredLever).getValue(LeverBlock.POWERED);
+					return new PlacementSearch(
+						new Placement(pistonSlot, extend, poweredLever, Direction.UP, true, false, !powered), false);
+				}
+				// The attach block is powered by a non-lever redstone source
+				// (dust, repeater, button, ...): the headless trick needs the
+				// power to be cuttable, so skip this spot and remember it.
+				if (isPowered(level, attachTarget)) {
+					sawPowered = true;
+					continue;
+				}
+				return new PlacementSearch(
+					new Placement(pistonSlot, extend, spot.leverPos(), spot.attachDir(), true, true, true), false);
 			}
 		}
-		return null;
+		return new PlacementSearch(null, sawPowered);
 	}
 
 	/**
@@ -612,6 +643,32 @@ public final class AutoBreaker {
 		return null;
 	}
 
+	/** Any lever among the 6 neighbours of {@code pos} (any on/off state). */
+	private static BlockPos findLeverOnBlock(Level level, BlockPos pos) {
+		for (Direction d : Direction.values()) {
+			BlockPos lp = pos.relative(d);
+			if (level.getBlockState(lp).is(Blocks.LEVER)) {
+				return lp;
+			}
+		}
+		return null;
+	}
+
+	/** True if {@code pos} receives redstone power from a neighbouring block
+	 *  (any signal strength > 0: levers, dust, repeaters, buttons, pressure
+	 *  plates, ...). Uses BlockState.getSignal, which is named the same in
+	 *  every supported version. */
+	private static boolean isPowered(Level level, BlockPos pos) {
+		for (Direction d : Direction.values()) {
+			BlockPos neighbour = pos.relative(d);
+			BlockState state = level.getBlockState(neighbour);
+			if (state.getSignal(level, neighbour, d) > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Finds a spot for a new lever: attached to the target bedrock first (the
 	 * bedrock then powers the piston, 100% reliable), then attached to a
@@ -630,6 +687,30 @@ public final class AutoBreaker {
 				continue;
 			}
 			return new LeverSpot(leverSlot, lv.getOpposite());
+		}
+		// Flat bedrock layers (e.g. the nether roof): the target's direct
+		// neighbours are all bedrock or the piston slot, so the candidate above
+		// finds nothing. Fall back to a lever ON TOP of a horizontal neighbour
+		// block of the target (the flat bedrock itself): the power path
+		// lever -> neighbour -> target -> piston goes through redstone
+		// conductors only, and the lever is attached to the bedrock, so it is
+		// not mined away together with the piston.
+		for (Direction lv : Direction.Plane.HORIZONTAL) {
+			BlockPos neighbour = target.relative(lv);
+			if (!level.getBlockState(neighbour).isRedstoneConductor(level, neighbour)) {
+				continue;
+			}
+			BlockPos leverSlot = neighbour.relative(Direction.UP);
+			if (leverSlot.equals(pistonPos) || leverSlot.equals(pistonPos.relative(extendDir))) {
+				continue;
+			}
+			if (playerIntersects(leverSlot)) {
+				continue;
+			}
+			if (!level.getBlockState(leverSlot).isAir()) {
+				continue;
+			}
+			return new LeverSpot(leverSlot, Direction.DOWN);
 		}
 		for (Direction lv : Direction.Plane.HORIZONTAL) {
 			BlockPos leverSlot = pistonPos.relative(lv);
@@ -657,6 +738,12 @@ public final class AutoBreaker {
 			return false;
 		}
 		return player.getBoundingBox().intersects(new AABB(pos));
+	}
+
+	/** Item use (the ClientLevel argument was dropped in 1.19.3; older versions
+	 *  are not supported). */
+	private static void useItemOn(net.minecraft.client.multiplayer.MultiPlayerGameMode gameMode, LocalPlayer player, InteractionHand hand, net.minecraft.world.phys.BlockHitResult hitResult) {
+		gameMode.useItemOn(player, hand, hitResult);
 	}
 
 	/** Records a placed block in a bounded most-recent-first cache. */
@@ -697,7 +784,7 @@ public final class AutoBreaker {
 			accessor.bedrockMinerExtra$setXRot(pitch);
 			accessor.bedrockMinerExtra$setYRot(yaw);
 			player.yHeadRot = yaw;
-			gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+			useItemOn(gameMode, player, InteractionHand.MAIN_HAND, hitResult);
 		} finally {
 			// Local view only; server view stays at the placement rotation.
 			accessor.bedrockMinerExtra$setXRot(oldXRot);
@@ -737,7 +824,7 @@ public final class AutoBreaker {
 			accessor.bedrockMinerExtra$setXRot(pitch);
 			accessor.bedrockMinerExtra$setYRot(yaw);
 			player.yHeadRot = yaw;
-			gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+			useItemOn(gameMode, player, InteractionHand.MAIN_HAND, hitResult);
 		} finally {
 			// Local view only; server view stays at the placement rotation.
 			accessor.bedrockMinerExtra$setXRot(oldXRot);
@@ -858,13 +945,24 @@ public final class AutoBreaker {
 			state = State.IDLE;
 			return;
 		}
-		// Mine away the piston WE placed; for the lever, just flip it OFF (it is
+	// Mine away the piston WE placed; for the lever, just flip it OFF (it is
 		// slow to mine and will be reused by the next attempt).
 		if (needPlacePiston && level.getBlockState(pistonPos).is(Blocks.PISTON)) {
 			if (!miningStarted) {
-				if (!switchToBestPickaxe(player)) {
-					state = State.IDLE;
-					return;
+				// Clear any leftover mining state (isDestroying / destroyDelay /
+				// destroyProgress) from the previous attempt, otherwise
+				// startDestroyBlock is skipped as already-destroying and the
+				// progress gets stuck at the last bit.
+				gameMode.stopDestroyBlock();
+				((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$setDestroyDelay(0);
+				// Slow-mine (server progress follows the client, unlike instant
+				// mining where the client removes the piston locally while the
+				// server still has to process the START packet).
+				if (!switchToSlowItem(player)) {
+					if (!switchToBestPickaxe(player)) {
+						state = State.IDLE;
+						return;
+					}
 				}
 				miningStarted = true;
 			}
@@ -872,8 +970,7 @@ public final class AutoBreaker {
 			gameMode.continueDestroyBlock(pistonPos, Direction.UP);
 		} else if (needPlaceLever && level.getBlockState(leverPos).is(Blocks.LEVER)
 			&& level.getBlockState(leverPos).getValue(LeverBlock.POWERED)) {
-			gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
-				new BlockHitResult(Vec3.atCenterOf(leverPos), Direction.UP, leverPos, false));
+			useItemOn(gameMode, player, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(leverPos), Direction.UP, leverPos, false));
 			miningStarted = false;
 			state = State.IDLE;
 		} else {
@@ -904,15 +1001,19 @@ public final class AutoBreaker {
 		BlockPos piston = firstUselessPlacedPiston(level);
 		if (piston != null) {
 			if (!miningStarted) {
-				if (!switchToBestPickaxe(player)) {
-					placedPistons.clear();
-					placedLevers.clear();
-					miningStarted = false;
-					state = State.IDLE;
-					return;
-				}
 				gameMode.stopDestroyBlock();
 				((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$setDestroyDelay(0);
+				// Slow-mine first (reliable: the server's progress follows the
+				// client); fall back to the best pickaxe if no slow item exists.
+				if (!switchToSlowItem(player)) {
+					if (!switchToBestPickaxe(player)) {
+						placedPistons.clear();
+						placedLevers.clear();
+						miningStarted = false;
+						state = State.IDLE;
+						return;
+					}
+				}
 				miningStarted = true;
 			}
 			gameMode.startDestroyBlock(piston, Direction.UP);
@@ -995,7 +1096,11 @@ public final class AutoBreaker {
 
 	/** Shows a message above the hotbar (action bar), like vanilla sleep prompts. */
 	private static void showActionBar(String message) {
+		//? if >=1.19 {
 		Component text = Component.literal(message);
+		//?} else {
+		/*Component text = new net.minecraft.network.chat.TextComponent(message);*/
+		//?}
 		//? if >=26.2 {
 		/*Minecraft.getInstance().gui.hud.setOverlayMessage(text, false);*/
 		//?} else {

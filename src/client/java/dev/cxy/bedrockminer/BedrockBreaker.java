@@ -12,7 +12,6 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 //? if >=1.21.11 {
@@ -236,14 +235,19 @@ public final class BedrockBreaker {
 			? ResourceLocation.tryParse(id)
 			: new ResourceLocation("minecraft", id);*/
 		//?}
-		if (loc == null || !BuiltInRegistries.BLOCK.containsKey(loc)) {
+		if (loc == null || !blockRegistry().containsKey(loc)) {
 			return null;
 		}
 		return loc.toString();
 	}
 
 	public static boolean isWhitelisted(Block block) {
-		return blockWhitelist.contains(BuiltInRegistries.BLOCK.getKey(block).toString());
+		return blockWhitelist.contains(blockRegistry().getKey(block).toString());
+	}
+
+	/** The block registry (BuiltInRegistries.BLOCK on every supported version). */
+	public static net.minecraft.core.Registry<net.minecraft.world.level.block.Block> blockRegistry() {
+		return net.minecraft.core.registries.BuiltInRegistries.BLOCK;
 	}
 
 	// ------------------------------------------------------------------
@@ -329,7 +333,7 @@ public final class BedrockBreaker {
 		}
 		BlockState state = level.getBlockState(pos);
 		if (state.is(Blocks.PISTON)) {
-			// LOGGER.info("Bedrock Miner Extra: mined piston detected at {} (state {})", pos, state);
+			LOGGER.info("Bedrock Miner Extra: mined piston detected at {} (state {})", pos, state);
 		}
 		Scene scene = capture(level, pos, state, true);
 		if (scene != null) {
@@ -386,7 +390,7 @@ public final class BedrockBreaker {
 			return;
 		}
 		float[] yp = getYawPitch(scene.bedrockDir());
-		mc.player.connection.send(rotPacket(yp[0], yp[1], mc.player.onGround()));
+		mc.player.connection.send(rotPacket(yp[0], yp[1], BedrockBreaker.playerOnGround(mc.player)));
 		earlyRotSent = true;
 		earlyRotPos = pos;
 	}
@@ -394,7 +398,7 @@ public final class BedrockBreaker {
 	/** Restores the server-side view once the player stops aiming at the piston. */
 	private static void restoreViewIfNeeded(Minecraft mc) {
 		if (earlyRotSent) {
-			mc.player.connection.send(rotPacket(mc.player.getYRot(), mc.player.getXRot(), mc.player.onGround()));
+			mc.player.connection.send(rotPacket(mc.player.getYRot(), mc.player.getXRot(), BedrockBreaker.playerOnGround(mc.player)));
 			earlyRotSent = false;
 			earlyRotPos = null;
 		}
@@ -415,7 +419,7 @@ public final class BedrockBreaker {
 		// blocked by the target; the headless-piston trick requires this state.
 		if (!state.getValue(PistonBaseBlock.EXTENDED)) {
 			if (log) {
-				// LOGGER.info("Bedrock Miner Extra: piston at {} is not extended", pos);
+				LOGGER.info("Bedrock Miner Extra: piston at {} is not extended", pos);
 			}
 			return null;
 		}
@@ -445,7 +449,7 @@ public final class BedrockBreaker {
 		}
 		if (targetDir == null) {
 			if (log) {
-				// LOGGER.info("Bedrock Miner Extra: no whitelisted block adjacent to piston at {} (facing {})", pos, facing);
+				LOGGER.info("Bedrock Miner Extra: no whitelisted block adjacent to piston at {} (facing {})", pos, facing);
 			}
 			return null;
 		}
@@ -453,7 +457,7 @@ public final class BedrockBreaker {
 		// The piston must currently be powered (i.e. extended).
 		if (!level.hasNeighborSignal(pos)) {
 			if (log) {
-				// LOGGER.info("Bedrock Miner Extra: piston at {} is not powered", pos);
+				LOGGER.info("Bedrock Miner Extra: piston at {} is not powered", pos);
 			}
 			return null;
 		}
@@ -462,7 +466,7 @@ public final class BedrockBreaker {
 		PowerSource power = findPowerSource(level, pos);
 		if (power == null) {
 			if (log) {
-				// LOGGER.info("Bedrock Miner Extra: no powered lever within 2 blocks of piston at {}", pos);
+				LOGGER.info("Bedrock Miner Extra: no powered lever within 2 blocks of piston at {}", pos);
 			}
 			return null;
 		}
@@ -508,9 +512,9 @@ public final class BedrockBreaker {
 		if (player == null || gameMode == null) {
 			return;
 		}
-		gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
+		useItemOn(gameMode, player, InteractionHand.MAIN_HAND,
 			new BlockHitResult(Vec3.atCenterOf(scene.power().pos()), Direction.UP, scene.power().pos(), false));
-		// LOGGER.info("Bedrock Miner Extra: cut power at {} (LEVER)", scene.power().pos());
+			LOGGER.info("Bedrock Miner Extra: cut power at {} (LEVER)", scene.power().pos());
 	}
 
 	/** Places the fresh piston facing the target, after the piston was mined. */
@@ -529,7 +533,7 @@ public final class BedrockBreaker {
 			return;
 		}
 
-		// LOGGER.info("Bedrock Miner Extra: placing fresh piston at {} facing {}", scene.pistonPos(), scene.bedrockDir());
+			LOGGER.info("Bedrock Miner Extra: placing fresh piston at {} facing {}", scene.pistonPos(), scene.bedrockDir());
 
 		// Prefer a piston in the hotbar (switch to its slot), fall back to a
 		// piston in the offhand (no hotbar switch needed).
@@ -603,8 +607,8 @@ public final class BedrockBreaker {
 			accessor.bedrockMinerExtra$setXRot(pitch);
 			accessor.bedrockMinerExtra$setYRot(yaw);
 			player.yHeadRot = yaw;
-			player.connection.send(rotPacket(yaw, pitch, player.onGround()));
-			gameMode.useItemOn(player, hand, hitResult);
+			player.connection.send(rotPacket(yaw, pitch, BedrockBreaker.playerOnGround(player)));
+			useItemOn(gameMode, player, hand, hitResult);
 		} finally {
 			// Restore the LOCAL view only. The server-side view is left at the
 			// bedrock-facing rotation on purpose: the server's yHeadRot lags
@@ -622,6 +626,23 @@ public final class BedrockBreaker {
 	 * Builds the rotation packet; the constructor gained a 4th argument in
 	 * 1.21.11 (horizontalCollision), before that it was (yaw, pitch, onGround).
 	 */
+	/** Whether the player is on the ground: onGround() on every version from
+	 *  1.20 on (yarn 1.20+ and mojmap 26.x both name the method onGround()),
+	 *  isOnGround() on 1.19.4 (mojmap, where onGround is a protected field). */
+	public static boolean playerOnGround(LocalPlayer player) {
+		//? if >=1.20 {
+		return player.onGround();
+		//?} else {
+		/*return player.isOnGround();*/
+		//?}
+	}
+
+	/** Item use (the ClientLevel argument was dropped in 1.19.3; older versions
+	 *  are not supported). */
+	private static void useItemOn(MultiPlayerGameMode gameMode, LocalPlayer player, InteractionHand hand, BlockHitResult hitResult) {
+		gameMode.useItemOn(player, hand, hitResult);
+	}
+
 	public static ServerboundMovePlayerPacket rotPacket(float yaw, float pitch, boolean onGround) {
 		//? if >=1.21.11 {
 		return new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround, false);

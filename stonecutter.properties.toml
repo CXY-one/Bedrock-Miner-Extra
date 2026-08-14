@@ -1,9 +1,15 @@
 mod.id = "bedrock-miner-extra"
 mod.name = "Bedrock-Miner-Extra"
 mod.group = "dev.cxy"
-mod.version = "2.1.1"
+mod.version = "2.2.1"
 
 deps.fabric_loader = "0.19.3"
+
+["1.19.4"]
+mod.mc_compat = "1.19.4"
+mod.mc_releases = ["1.19.4"]
+
+deps.fabric_api = "0.87.2+1.19.4"
 
 ["1.20.1"]
 mod.mc_compat = "1.20.1"

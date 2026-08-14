@@ -4,7 +4,7 @@
 
 A **client-side** Fabric mod that lets you break bedrock in survival using the **vanilla headless-piston trick** (Mojang bug **MC-27056**). Mine the piston at **any speed** — slow hand-mining *or* instant-mining with an Efficiency V pickaxe + Haste II both work: the mod handles both vanilla mining paths at the `MultiPlayerGameMode.destroyBlock` entry point. A built-in **auto mode** left-clicks bedrock to place the piston + lever and break it for you, with a 5-slot queue.
 
-**Supported versions**: 26.2 / 26.1 / 26.1.2, 1.21.11 / 1.21.1 / 1.21, 1.20.6 / 1.20.5 / 1.20.1 (one source tree, Stonecutter multi-version build).
+**Supported versions**: 26.2 / 26.1 / 26.1.2, 1.21.11 / 1.21.1 / 1.21, 1.20.6 / 1.20.5 / 1.20.1, 1.19.4 (one source tree, Stonecutter multi-version build). **1.18.2 and older are not supported**: before 1.19.3 there is no block-break prediction system, so the headless-piston trick only works with instant mining inside the piston's retraction window — which conflicts with this mod's any-speed design.
 
 > This mod does **not** modify any vanilla behaviour: it only sends the same packets a tick-perfect player would send. The bedrock breaking itself comes from the vanilla bug.
 
@@ -43,7 +43,7 @@ Works best vertically (e.g. mining the nether/end bedrock layers); horizontal fa
 
 Enable it with `/bedrockMinerExtra auto`, then **left-click bedrock** to break it automatically:
 
-1. It checks the 6 neighbour faces (closest to the player first) for a spot where a piston can be placed with its head facing air (so it can extend) plus a lever slot; if none exists you get a "no space" action-bar message. **Existing setups are reused**: an already-placed extendable piston next to the bedrock is used as-is (no new piston placed), and an existing lever that powers it is reused too (flipped on automatically if it is off — its state is checked).
+1. It checks the 6 neighbour faces (closest to the player first) for a spot where a piston can be placed with its head facing air (so it can extend) plus a lever slot; if none exists you get a "no space" action-bar message. **Existing setups are reused**: an already-placed extendable piston next to the bedrock is used as-is (no new piston placed), and an existing lever that powers it is reused too (flipped on automatically if it is off — its state is checked). **Flat bedrock layers** (e.g. breaking the nether roof, y128, from above): when every neighbour of the target is bedrock, the piston is placed on top of the target with its head pointing up, and the lever goes on top of an adjacent bedrock block — the power flows lever → bedrock → target → piston. **Already-powered spots**: if the lever's attach block is already powered by an existing lever (even an off-axis one, e.g. on top of the flat bedrock), that lever is reused (kept on, or flipped on if off); if it is powered by a non-lever source (redstone dust, repeater, button, ...), the spot is skipped with a "position powered by redstone" action-bar message instead of wasting blocks.
 2. It places the piston (head facing air; the rotation packet is sent one tick before placement so the server derives the correct facing) and the lever — **preferring a spot on the target bedrock itself** (the lever powers the bedrock, which powers the piston — 100% reliable), falling back to the piston's side; it then **flips the lever on** to extend the piston, and waits for it.
 3. If the chosen piston slot is blocked (e.g. you are standing there), it **tries the other faces** instead of failing.
 4. It switches to the hotbar item with the highest mining speed on pistons (26.x has no pickaxe class — ranked by actual destroy speed), mines the piston, and the manual mechanism above does the rest.
@@ -60,8 +60,8 @@ Enable it with `/bedrockMinerExtra auto`, then **left-click bedrock** to break i
 | `/bedrockMinerExtra on` / `off` | Set the state explicitly |
 | `/bedrockMinerExtra auto` | Toggle auto mode |
 | `/bedrockMinerExtra auto on` / `off` | Set auto mode explicitly |
-| `/bedrockMinerExtra blockWhitelist add <block>` | Add a block to the whitelist (`obsidian` or `minecraft:obsidian`) |
-| `/bedrockMinerExtra blockWhitelist remove <block>` | Remove a block from the whitelist |
+| `/bedrockMinerExtra blockWhitelist add <block>` | Add a block to the whitelist (`obsidian` or `minecraft:obsidian`) — **Tab completes every registered block id** |
+| `/bedrockMinerExtra blockWhitelist remove <block>` | Remove a block from the whitelist — **Tab completes the current whitelist entries** |
 | `/bedrockMinerExtra blockWhitelist list` | List whitelisted blocks |
 
 Default whitelist: `minecraft:bedrock`.
@@ -83,7 +83,23 @@ Default whitelist: `minecraft:bedrock`.
 - The mod depends on the vanilla MC-27056 bug; if Mojang ever fixes it, the mod stops working.
 - On multiplayer servers, please ask other players first — the mod reminds you when you join a server with it enabled.
 
-## Changelog (1.3.0 → 2.1.1)
+## Changelog (1.3.0 → 2.2.1)
+
+### 2.2.1
+- **Drop 1.18.2 support** (10 versions remain, 1.19.4–26.2): before 1.19.3 there is no block-break prediction system, so the headless-piston trick only fires with instant mining inside the piston's 2-tick retraction window — that conflicts with this mod's any-speed design and cannot be automated reliably. See "Supported versions".
+- **Fix cleanup mining stuck at the last bit** (all versions): the failure/success cleanup now clears leftover mining state (isDestroying / destroyDelay) before re-mining, and slow-mines first for reliable server-client progress sync
+- Generic failure message no longer claims "may be powered by redstone"
+
+### 2.2.0
+- **New supported versions**: 1.18.2 and 1.19.4 (11 versions total). 1.18.2 predates the block-break prediction system, so the packet-timing mixin uses `destroyBlock`'s return as its anchor there; command API v1, the older registry and text APIs are handled per version
+
+### 2.1.3
+- **Tab completion** for the whitelist commands: `blockWhitelist add` completes every registered block id, `remove` completes the current whitelist entries
+- **Already-powered lever spots are reused**: an existing lever powering the lever's attach block (even off-axis, e.g. on the flat bedrock) is reused instead of placing a second lever
+- **Non-lever power sources are detected**: if the attach block is powered by redstone dust/repeater/button/..., the spot is skipped with a "position powered by redstone" message (and the generic failure message now hints at possible redstone power as a fallback)
+
+### 2.1.2
+- **Nether-roof flat bedrock** (breaking y128 bedrock from above): the piston is now placed on top of the target with its head pointing up, and the lever goes on top of an adjacent bedrock block (power: lever → bedrock → target → piston) — previously this reported "no space" because every neighbour of the target was bedrock
 
 ### 2.1.1
 - The two switches are now linked: `/bedrockMinerExtra off` also turns auto mode off; `/bedrockMinerExtra auto on` keeps the manual flow on (auto mode depends on it)

@@ -39,6 +39,13 @@ public abstract class MultiPlayerGameModeMixin {
 		BedrockBreaker.onBlockBreakStarted(pos);
 	}
 
+	// The prediction system (startPrediction) exists from 1.19.3 on; its RETURN
+	// runs after the break packet (START/STOP) was sent, which is the
+	// fresh-piston placement anchor. (1.18.2 and older are not supported: their
+	// headless trick needs instant mining inside the retraction window, which
+	// conflicts with this mod's any-speed design.) The inCutPower guard in
+	// BedrockBreaker keeps the nested startPrediction of the cutPower useItemOn
+	// from placing the fresh piston too early.
 	@Inject(method = "startPrediction", at = @At("RETURN"))
 	private void bedrockMinerExtra$sendAfterMiningPacket(CallbackInfo ci) {
 		BedrockBreaker.onPredictionPacketSent();

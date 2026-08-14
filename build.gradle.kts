@@ -49,8 +49,10 @@ dependencies {
 
 	modImplementation("net.fabricmc:fabric-loader:${property("deps.fabric_loader")}")
 
+	// The client command API v2 only exists on 1.19.4+; older versions use v1.
+	val commandApi = if (sc.current.parsed >= "1.19.4") "fabric-command-api-v2" else "fabric-command-api-v1"
 	fapi(
-		"fabric-command-api-v2",
+		commandApi,
 		"fabric-events-interaction-v0",
 		"fabric-lifecycle-events-v1",
 		"fabric-networking-api-v1",

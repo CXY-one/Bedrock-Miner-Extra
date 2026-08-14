@@ -31,7 +31,7 @@ Works best vertically (e.g. mining the nether/end bedrock layers); horizontal fa
 
 Enable it with `/bedrockMinerExtra auto`, then **left-click bedrock** to break it automatically:
 
-1. It checks the 6 neighbour faces (closest to the player first) for a spot where a piston can be placed with its head facing air (so it can extend) plus a lever slot; if none exists you get a "no space" action-bar message. **Existing setups are reused**: an already-placed extendable piston next to the bedrock is used as-is (no new piston placed), and an existing lever that powers it is reused too (flipped on automatically if it is off — its state is checked).
+1. It checks the 6 neighbour faces (closest to the player first) for a spot where a piston can be placed with its head facing air (so it can extend) plus a lever slot; if none exists you get a "no space" action-bar message. **Existing setups are reused**: an already-placed extendable piston next to the bedrock is used as-is (no new piston placed), and an existing lever that powers it is reused too (flipped on automatically if it is off — its state is checked). **Flat bedrock layers** (e.g. breaking the nether roof, y128, from above): when every neighbour of the target is bedrock, the piston is placed on top of the target with its head pointing up, and the lever goes on top of an adjacent bedrock block — power flows lever → bedrock → target → piston. **Already-powered spots**: an existing lever powering the lever's attach block (even off-axis) is reused; a non-lever source (dust, repeater, button, ...) makes the spot skipped with a "position powered by redstone" message instead of wasting blocks. **Tab completion**: `blockWhitelist add` completes every registered block id, `remove` completes the current whitelist.
 2. It places the piston (head facing air; the rotation packet is sent one tick before placement so the server derives the correct facing) and the lever — **preferring a spot on the target bedrock itself** (the lever powers the bedrock, which powers the piston — 100% reliable), falling back to the piston's side; it then **flips the lever on** to extend the piston, and waits for it.
 3. If the chosen piston slot is blocked (e.g. you are standing there), it **tries the other faces** instead of failing.
 4. It switches to the hotbar item with the highest mining speed on pistons (26.x has no pickaxe class — ranked by actual destroy speed), mines the piston, and the manual mechanism above does the rest.
@@ -65,7 +65,7 @@ Default whitelist: `minecraft:bedrock`.
 
 ## Compatibility
 
-- Minecraft **26.2 / 26.1 / 26.1.2 / 1.21.11 / 1.21.1 / 1.21 / 1.20.6 / 1.20.5 / 1.20.1**, Fabric Loader ≥ 0.19.3, Fabric API
+- Minecraft **26.2 / 26.1 / 26.1.2 / 1.21.11 / 1.21.1 / 1.21 / 1.20.6 / 1.20.5 / 1.20.1 / 1.19.4**, Fabric Loader ≥ 0.19.3, Fabric API. **1.18.2 and older are not supported** (no block-break prediction system before 1.19.3 — the headless trick there needs instant mining inside the retraction window, which conflicts with this mod's any-speed design).
 - Client-side only; works in singleplayer, LAN, and on servers (the server does not need the mod installed)
 
 ## License
