@@ -102,6 +102,10 @@ public final class BedrockBreaker {
 	// Whether auto mode is enabled (toggled with /bedrockMinerExtra auto).
 	private static boolean autoEnabled = false;
 
+	// Hotkey that opens the (malilib) config GUI; persisted so malilib can
+	// restore it. Only meaningful when malilib is present (26.x).
+	private static String openGuiHotkey = "LEFT_ALT,B";
+
 	// Blocks that can be broken with the trick (default: bedrock only).
 	private static final Set<String> blockWhitelist = new LinkedHashSet<>(DEFAULT_WHITELIST);
 
@@ -188,6 +192,19 @@ public final class BedrockBreaker {
 	}
 
 	// ------------------------------------------------------------------
+	// Config GUI hotkey
+	// ------------------------------------------------------------------
+
+	public static String getOpenGuiHotkey() {
+		return openGuiHotkey;
+	}
+
+	public static void setOpenGuiHotkey(String value) {
+		openGuiHotkey = value;
+		saveConfig();
+	}
+
+	// ------------------------------------------------------------------
 	// Block whitelist
 	// ------------------------------------------------------------------
 
@@ -264,6 +281,9 @@ public final class BedrockBreaker {
 				if (obj.has("autoEnabled")) {
 					autoEnabled = obj.get("autoEnabled").getAsBoolean();
 				}
+				if (obj.has("openGuiHotkey")) {
+					openGuiHotkey = obj.get("openGuiHotkey").getAsString();
+				}
 				if (obj.has("blockWhitelist") && obj.get("blockWhitelist").isJsonArray()) {
 					blockWhitelist.clear();
 					for (JsonElement e : obj.getAsJsonArray("blockWhitelist")) {
@@ -288,6 +308,7 @@ public final class BedrockBreaker {
 			JsonObject obj = new JsonObject();
 			obj.addProperty("enabled", enabled);
 			obj.addProperty("autoEnabled", autoEnabled);
+			obj.addProperty("openGuiHotkey", openGuiHotkey);
 			JsonArray arr = new JsonArray();
 			for (String id : blockWhitelist) {
 				arr.add(id);

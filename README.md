@@ -20,6 +20,7 @@ A **client-side** Fabric mod that lets you break bedrock in survival using the *
 - Toggleable with `/bedrockMinerExtra`; the two switches are **linked** — turning the mod off also turns auto mode off, and turning auto mode on keeps the manual flow on (auto mode depends on it)
 - **Block whitelist**: add other blocks to break with the same trick
 - All status messages (success, no space, failure) are shown in the **action bar** (above the hotbar, like vanilla prompts), not the chat
+- **Config GUI (malilib, all versions)**: toggle the mod / auto mode, edit the whitelist and set the open-GUI hotkey from a GUI — **optional**, detected at runtime (also reachable from **Mod Menu** and `/bedrockMinerExtra gui`)
 - Settings persisted to `config/bedrock-miner-extra.json`
 
 ## How to use
@@ -63,8 +64,21 @@ Enable it with `/bedrockMinerExtra auto`, then **left-click bedrock** to break i
 | `/bedrockMinerExtra blockWhitelist add <block>` | Add a block to the whitelist (`obsidian` or `minecraft:obsidian`) — **Tab completes every registered block id** |
 | `/bedrockMinerExtra blockWhitelist remove <block>` | Remove a block from the whitelist — **Tab completes the current whitelist entries** |
 | `/bedrockMinerExtra blockWhitelist list` | List whitelisted blocks |
+| `/bedrockMinerExtra gui` | Open the config GUI (requires malilib) |
 
 Default whitelist: `minecraft:bedrock`.
+
+## Config GUI (malilib)
+
+On any supported version, if **malilib** is installed, the mod adds a config screen where you can toggle the mod / auto mode, add/view/remove whitelist blocks, and set the hotkey that opens the GUI (default `LEFT_ALT + B`). **malilib is optional** — without it, everything works through the commands only.
+
+Three ways to open it:
+
+1. Press the hotkey (default `LEFT_ALT + B`, changeable in the GUI);
+2. `/bedrockMinerExtra gui`;
+3. **Mod Menu** → Bedrock Miner Extra → **Config** (Mod Menu is optional too).
+
+The GUI reads/writes the same `config/bedrock-miner-extra.json` as the commands, so the two stay in sync.
 
 ## Trigger conditions (all must hold)
 
@@ -83,7 +97,13 @@ Default whitelist: `minecraft:bedrock`.
 - The mod depends on the vanilla MC-27056 bug; if Mojang ever fixes it, the mod stops working.
 - On multiplayer servers, please ask other players first — the mod reminds you when you join a server with it enabled.
 
-## Changelog (1.3.0 → 2.2.1)
+## Changelog (1.3.0 → 2.4.0)
+
+### 2.4.0
+- **Config GUI on every version (1.19.4–26.2)**: the malilib GUI, Mod Menu "config" entry and `/bedrockMinerExtra gui` now work on all supported versions (malilib stays optional — detected at runtime). Mod Menu now links to the GitHub project page ("website") and the issue tracker ("issues").
+
+### 2.3.0
+- **Config GUI (malilib)**: toggle the mod / auto mode, edit the block whitelist and set the open-GUI hotkey from a malilib screen. **malilib and Mod Menu are optional** — detected at runtime; `/bedrockMinerExtra gui` opens the screen (a hotkey opens it too, default `LEFT_ALT + B`, changeable in the GUI).
 
 ### 2.2.1
 - **Drop 1.18.2 support** (10 versions remain, 1.19.4–26.2): before 1.19.3 there is no block-break prediction system, so the headless-piston trick only fires with instant mining inside the piston's 2-tick retraction window — that conflicts with this mod's any-speed design and cannot be automated reliably. See "Supported versions".
@@ -149,6 +169,7 @@ Version lock: Minecraft `26.1.2` + Fabric Loader `0.19.3` + Fabric API `0.155.2+
 
 - `BedrockBreaker` — client-side core: trigger detection (extendable piston + adjacent bedrock + powered) and the packet sequence (cut power → mine → place the fresh piston facing the target);
 - `AutoBreaker` — auto mode: queues left-clicks, and a client tick state machine does "find a spot → place piston + lever → wait for extension → mine the piston", reusing the `BedrockBreaker` headless flow; includes the blocked-slot retry, the placement cache and the post-success cleanup;
+- `config.MalilibConfigs` / `config.MalilibGui` / `compat.MalilibCompat` — optional malilib GUI (all versions, `//? if`-isolated and gated on `isModLoaded`); `compat.modmenu.ModMenuImpl` — the Mod Menu "config" entry (loads the GUI reflectively so a malilib-less install never touches malilib types);
 - `MultiPlayerGameModeMixin` — timing hooks: at the `destroyBlock` entry (both mining paths) it cuts the power and captures the scene, then sends the fresh-piston packets right after the break packet so the server processes "cut power → mine piston → place fresh piston" in one tick; also guards the fresh piston against vanilla re-mining;
 - `EntityAccessor` / `MultiPlayerGameModeAccessor` — accessors for 26.1.2 privatized fields (view rotation, mining target/progress).
 

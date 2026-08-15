@@ -37,6 +37,16 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 		registerCommands();
 		ClientTickEvents.END_CLIENT_TICK.register(BedrockBreaker::onClientTick);
 		ClientTickEvents.END_CLIENT_TICK.register(AutoBreaker::tick);
+		// Optional malilib GUI (init() no-ops when malilib is absent).
+		//? if >=1.19.4 {
+		dev.cxy.bedrockminer.compat.MalilibCompat.init();
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (pendingOpenGui) {
+				pendingOpenGui = false;
+				dev.cxy.bedrockminer.compat.MalilibCompat.openGui();
+			}
+		});
+		//?}
 		// Auto mode: left-click a whitelisted block to queue it for breaking.
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
 			if (!world.isClientSide()) {
@@ -79,6 +89,9 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 				.executes(BedrockMinerExtraClient::toggleAuto)
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("on").executes(ctx -> setAuto(ctx, true)))
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("off").executes(ctx -> setAuto(ctx, false))))
+			//? if >=1.19.4 {
+			.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("gui").executes(BedrockMinerExtraClient::openGuiCommand))
+			//?}
 			.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("blockWhitelist")
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("add")
 					.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.word())
@@ -131,6 +144,24 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 		}
 		return 1;
 	}
+
+	//? if >=1.19.4 {
+	// Set by /bedrockMinerExtra gui; opened on the next client tick so the
+	// chat screen's teardown doesn't immediately replace the config screen.
+	private static boolean pendingOpenGui;
+
+	private static int openGuiCommand(CommandContext<FabricClientCommandSource> ctx) {
+		if (!dev.cxy.bedrockminer.compat.MalilibCompat.isAvailable()) {
+			LocalPlayer player = Minecraft.getInstance().player;
+			if (player != null) {
+				sendChatMessage(player, text("Bedrock Miner Extra: 需要安装 malilib 才能打开配置界面"));
+			}
+			return 1;
+		}
+		pendingOpenGui = true;
+		return 1;
+	}
+	//?}
 
 	private static void sendAutoEnablePrompt(Minecraft client) {
 		LocalPlayer player = client.player;

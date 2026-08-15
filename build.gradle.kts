@@ -24,6 +24,22 @@ fun resourceExpansionProps() = mapOf(
 
 repositories {
 	mavenCentral()
+	maven {
+		name = "Masa"
+		url = uri("https://masa.dy.fi/maven")
+	}
+	maven {
+		name = "SakuraRyoko"
+		url = uri("https://masa.dy.fi/maven/sakura-ryoko")
+	}
+	maven {
+		name = "TerraformersMC"
+		url = uri("https://maven.terraformersmc.com/releases/")
+	}
+	maven {
+		name = "FallenBreath"
+		url = uri("https://maven.fallenbreath.me/releases")
+	}
 }
 
 loom {
@@ -59,6 +75,18 @@ dependencies {
 	)
 	modRuntimeOnly("net.fabricmc.fabric-api:fabric-api:${property("deps.fabric_api")}") {
 		exclude(group = "net.fabricmc", module = "fabric-loader")
+	}
+
+	// modmenu is optional (compile-only) on every version: the modmenu
+	// entrypoint class exists everywhere, so an older version with modmenu
+	// installed simply reports "no config screen" when malilib is absent.
+	modCompileOnly("com.terraformersmc:modmenu:${scProperty("deps.mod_menu")}")
+
+	// malilib is optional (compile-only) on every supported version (1.19.4 ..
+	// 26.2). The GUI code is isolated behind //? if >=1.19.4 and a runtime
+	// isModLoaded check.
+	if (sc.current.parsed >= "1.19.4") {
+		modCompileOnly("fi.dy.masa.malilib:malilib-fabric-${scProperty("deps.malilib_mc")}:${scProperty("deps.malilib")}")
 	}
 }
 
