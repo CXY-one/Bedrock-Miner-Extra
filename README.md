@@ -97,7 +97,10 @@ The GUI reads/writes the same `config/bedrock-miner-extra.json` as the commands,
 - The mod depends on the vanilla MC-27056 bug; if Mojang ever fixes it, the mod stops working.
 - On multiplayer servers, please ask other players first — the mod reminds you when you join a server with it enabled.
 
-## Changelog (1.3.0 → 2.4.0)
+## Changelog (1.3.0 → 2.4.1)
+
+### 2.4.1
+- **Mod Menu links fixed**: the "website / source / issues" buttons now point at the GitHub repo (via the `contact` field), plus a GitHub Releases link.
 
 ### 2.4.0
 - **Config GUI on every version (1.19.4–26.2)**: the malilib GUI, Mod Menu "config" entry and `/bedrockMinerExtra gui` now work on all supported versions (malilib stays optional — detected at runtime). Mod Menu now links to the GitHub project page ("website") and the issue tracker ("issues").

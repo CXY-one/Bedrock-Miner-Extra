@@ -19,6 +19,7 @@ Fabric **纯客户端**模组：在生存模式中利用原版"无头活塞"特�
 - **可开关**：用 `/bedrockMinerExtra` 指令随时开/关（也支持 `/bedrockMinerExtra on|off`），状态保存到 `config/bedrock-miner-extra.json`；开启/进世界时聊天栏提示 `Bedrock Miner Extra 已启动！`，在联机服务器使用时额外提示先征询其他玩家意见。**两个开关联动**：关闭主开关会同时关闭自动模式；开启自动模式会自动打开主开关（自动模式依赖手动流程）。
 - **可破方块白名单**：默认只有基岩；可用 `/bedrockMinerExtra blockWhitelist add <方块名>` 加入其它方块（同样方法破）、`remove` 删除、`list` 查看。
 - **提示在物品栏上方**：破基岩成功、空间不足、破基岩失败等提示都显示在 **action bar**（物品栏上方，同原版睡眠提示），不刷聊天栏。
+- **配置界面（malilib，全版本）**：在图形界面里开关 mod / 自动模式、编辑白名单、设置打开界面的快捷键——**可选**（检测到才启用，未装时指令照常；也可从 **Mod Menu** 和 `/bedrockMinerExtra gui` 进入）。
 
 ## 使用方法（重要：活塞头不能朝基岩）
 
@@ -65,9 +66,22 @@ Fabric **纯客户端**模组：在生存模式中利用原版"无头活塞"特�
 /bedrockMinerExtra blockWhitelist add <方块名>   添加可破方块（Tab 可自动补齐全部方块名）
 /bedrockMinerExtra blockWhitelist remove <方块名> 移除（Tab 可自动补齐当前白名单）
 /bedrockMinerExtra blockWhitelist list           查看白名单
+/bedrockMinerExtra gui                           打开配置界面（需安装 malilib）
 ```
 
 方块名支持 `bedrock` 简写（自动补 `minecraft:` 前缀）或完整 ID `minecraft:bedrock`；未知方块会提示错误。白名单持久化在 `config/bedrock-miner-extra.json`。
+
+## 配置界面（malilib）
+
+安装 **malilib** 后，mod 会提供一个图形配置界面，可开关 mod / 自动模式、添加/查看/删除白名单方块、设置打开界面的快捷键（默认 `LEFT_ALT + B`）。**malilib 是可选依赖**——不装时一切照常用指令操作。
+
+三种打开方式：
+
+1. 按快捷键（默认 `LEFT_ALT + B`，可在界面里改）；
+2. `/bedrockMinerExtra gui`；
+3. **Mod Menu** → Bedrock Miner Extra → **Config**（Mod Menu 也是可选依赖）。
+
+界面读写的是同一个 `config/bedrock-miner-extra.json`，与指令完全同步。
 
 ## 已知限制
 
@@ -77,7 +91,16 @@ Fabric **纯客户端**模组：在生存模式中利用原版"无头活塞"特�
 - **不支持红石火把充能**：headless 特性要求"先断信号再挖活塞"，但火把只能靠挖掘包破坏（会重置服务器挖掘进度，普通速度下活塞无法同 tick 破坏），协议层无法实现；请使用拉杆充能。
 - 依赖原版 MC-27056 特性：若未来 Mojang 修复该 bug，本 mod 将失效。
 
-## 更新日志（1.3.0 → 2.2.1）
+## 更新日志（1.3.0 → 2.4.1）
+
+### 2.4.1
+- **修复 Mod Menu 链接按钮**："网站 / 源码 / 问题"按钮现在指向 GitHub 仓库（通过 `contact` 字段），另附 GitHub Releases 链接。
+
+### 2.4.0
+- **配置界面扩展至全部版本（1.19.4~26.2）**：malilib 配置界面、Mod Menu 的 Config 入口、`/bedrockMinerExtra gui` 现在在所有支持版本可用（malilib 仍是可选依赖，运行时检测）。Mod Menu 新增项目主页（"网站"）与 issue（"问题"）链接。
+
+### 2.3.0
+- **新增 malilib 配置界面**：在图形界面里开关 mod / 自动模式、编辑白名单、设置打开界面的快捷键（默认 `LEFT_ALT + B`）。malilib 与 Mod Menu 均为**可选依赖**（检测到才启用）；`/bedrockMinerExtra gui` 打开界面。
 
 ### 2.2.1
 - **移除 1.18.2 支持**（剩 10 个版本，1.19.4~26.2）：1.19.3 之前没有方块破坏预测系统，无头活塞特性只能在活塞"收回的 2 tick 窗口"内配合瞬间破坏触发——与本 mod 的"任意速度"设计冲突，无法可靠自动化。详见"支持版本"。
@@ -143,6 +166,7 @@ Fabric **纯客户端**模组：在生存模式中利用原版"无头活塞"特�
 
 - `BedrockBreaker` — 纯客户端核心：判定触发条件（活塞能伸出 + 旁有基岩 + 带电）、发包序列（断信号 → 挖活塞 → 放置朝向基岩的新活塞）；
 - `AutoBreaker` — 自动模式：左键点击白名单方块入队，客户端 tick 状态机自动"找位置 → 放活塞+拉杆 → 等伸出 → 挖活塞"，复用 `BedrockBreaker` 的 headless 流程；包含被挡换位、放置缓存与成功清理；
+- `config.MalilibConfigs` / `config.MalilibGui` / `compat.MalilibCompat` — 可选 malilib 配置界面（全版本，`//? if` 隔离 + `isModLoaded` 门控）；`compat.modmenu.ModMenuImpl` — Mod Menu 的 Config 入口（反射加载界面，未装 malilib 时不会触碰 malilib 类型）；
 - `MultiPlayerGameModeMixin` — 时序钩子：在 `MultiPlayerGameMode.destroyBlock` 入口（慢速进度满与瞬间破坏特判两条路径都经过）先"断信号"并捕获场景，再在破坏包（`START`/`STOP_DESTROY_BLOCK`）发送之后紧跟"放新活塞"的包，保证服务器同刻按"断信号 → 挖活塞 → 放新活塞"处理；还拦截新活塞保护窗口内的二次挖掘；
 - `EntityAccessor` / `MultiPlayerGameModeAccessor` — 26.1.2 私有化字段（视角、挖掘目标/进度）的访问器。
 
