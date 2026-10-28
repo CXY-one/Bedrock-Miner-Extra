@@ -15,6 +15,8 @@ import java.util.List;
  */
 public class MalilibGui extends GuiConfigsBase {
 
+	private boolean synced;
+
 	public MalilibGui(Screen parent) {
 		super(10, 50, "bedrock-miner-extra", parent, "bedrock-miner-extra.gui.title");
 	}
@@ -22,8 +24,13 @@ public class MalilibGui extends GuiConfigsBase {
 	@Override
 	public void initGui() {
 		super.initGui();
-		// Re-sync from BedrockBreaker so command-line changes show up here.
-		MalilibConfigs.syncFromBreaker();
+		// Read the JSON-backed state once for this screen. Re-running initGui
+		// while returning from a child view must not overwrite a key currently
+		// being edited in malilib's widgets.
+		if (!synced) {
+			MalilibConfigs.syncFromBreaker();
+			synced = true;
+		}
 	}
 
 	@Override
@@ -31,8 +38,10 @@ public class MalilibGui extends GuiConfigsBase {
 		return ConfigOptionWrapper.createFor(List.of(
 			MalilibConfigs.MOD_ENABLED,
 			MalilibConfigs.AUTO_ENABLED,
+			MalilibConfigs.ALLOW_STICKY_PISTON,
 			MalilibConfigs.BLOCK_WHITELIST,
-			MalilibConfigs.OPEN_GUI
+			MalilibConfigs.OPEN_GUI,
+			MalilibConfigs.TOGGLE_AUTO
 		));
 	}
 }

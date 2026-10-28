@@ -94,11 +94,11 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 			//?}
 			.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("blockWhitelist")
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("add")
-					.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.word())
+					.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.greedyString())
 						.suggests(BedrockMinerExtraClient::suggestAllBlocks)
 						.executes(BedrockMinerExtraClient::whitelistAdd)))
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("remove")
-					.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.word())
+					.then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("block", StringArgumentType.greedyString())
 						.suggests(BedrockMinerExtraClient::suggestWhitelist)
 						.executes(BedrockMinerExtraClient::whitelistRemove)))
 				.then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("list")
@@ -226,14 +226,14 @@ public class BedrockMinerExtraClient implements ClientModInitializer {
 	}
 
 	private static int whitelistAdd(CommandContext<FabricClientCommandSource> ctx) {
-		String id = StringArgumentType.getString(ctx, "block");
+		String id = StringArgumentType.getString(ctx, "block").trim();
 		String result = BedrockBreaker.addWhitelistedBlock(id);
 		ctx.getSource().sendFeedback(text("Bedrock Miner Extra: " + result));
 		return 1;
 	}
 
 	private static int whitelistRemove(CommandContext<FabricClientCommandSource> ctx) {
-		String id = StringArgumentType.getString(ctx, "block");
+		String id = StringArgumentType.getString(ctx, "block").trim();
 		String result = BedrockBreaker.removeWhitelistedBlock(id);
 		ctx.getSource().sendFeedback(text("Bedrock Miner Extra: " + result));
 		return 1;

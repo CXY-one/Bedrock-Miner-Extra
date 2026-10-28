@@ -83,7 +83,7 @@ dependencies {
 	modCompileOnly("com.terraformersmc:modmenu:${scProperty("deps.mod_menu")}")
 
 	// malilib is optional (compile-only) on every supported version (1.19.4 ..
-	// 26.2). The GUI code is isolated behind //? if >=1.19.4 and a runtime
+	// 26.3). The GUI code is isolated behind //? if >=1.19.4 and a runtime
 	// isModLoaded check.
 	if (sc.current.parsed >= "1.19.4") {
 		modCompileOnly("fi.dy.masa.malilib:malilib-fabric-${scProperty("deps.malilib_mc")}:${scProperty("deps.malilib")}")

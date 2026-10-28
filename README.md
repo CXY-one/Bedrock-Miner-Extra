@@ -4,7 +4,7 @@
 
 A **client-side** Fabric mod that lets you break bedrock in survival using the **vanilla headless-piston trick** (Mojang bug **MC-27056**). Mine the piston at **any speed** — slow hand-mining *or* instant-mining with an Efficiency V pickaxe + Haste II both work: the mod handles both vanilla mining paths at the `MultiPlayerGameMode.destroyBlock` entry point. A built-in **auto mode** left-clicks bedrock to place the piston + lever and break it for you, with a 5-slot queue.
 
-**Supported versions**: 26.2 / 26.1 / 26.1.2, 1.21.11 / 1.21.1 / 1.21, 1.20.6 / 1.20.5 / 1.20.1, 1.19.4 (one source tree, Stonecutter multi-version build). **1.18.2 and older are not supported**: before 1.19.3 there is no block-break prediction system, so the headless-piston trick only works with instant mining inside the piston's retraction window — which conflicts with this mod's any-speed design.
+**Supported versions**: 26.3 / 26.2 / 26.1 / 26.1.2, 1.21.11 / 1.21.1 / 1.21, 1.20.6 / 1.20.5 / 1.20.1, 1.19.4 (one source tree, Stonecutter multi-version build). **1.18.2 and older are not supported**: before 1.19.3 there is no block-break prediction system, so the headless-piston trick only works with instant mining inside the piston's retraction window — which conflicts with this mod's any-speed design.
 
 > This mod does **not** modify any vanilla behaviour: it only sends the same packets a tick-perfect player would send. The bedrock breaking itself comes from the vanilla bug.
 
@@ -20,7 +20,7 @@ A **client-side** Fabric mod that lets you break bedrock in survival using the *
 - Toggleable with `/bedrockMinerExtra`; the two switches are **linked** — turning the mod off also turns auto mode off, and turning auto mode on keeps the manual flow on (auto mode depends on it)
 - **Block whitelist**: add other blocks to break with the same trick
 - All status messages (success, no space, failure) are shown in the **action bar** (above the hotbar, like vanilla prompts), not the chat
-- **Config GUI (malilib, all versions)**: toggle the mod / auto mode, edit the whitelist and set the open-GUI hotkey from a GUI — **optional**, detected at runtime (also reachable from **Mod Menu** and `/bedrockMinerExtra gui`)
+- **Config GUI (malilib, all versions)**: toggle the mod / auto mode, enable sticky-piston support, edit the whitelist and set both hotkeys from a GUI — **optional**, detected at runtime (also reachable from **Mod Menu** and `/bedrockMinerExtra gui`)
 - Settings persisted to `config/bedrock-miner-extra.json`
 
 ## How to use
@@ -70,7 +70,7 @@ Default whitelist: `minecraft:bedrock`.
 
 ## Config GUI (malilib)
 
-On any supported version, if **malilib** is installed, the mod adds a config screen where you can toggle the mod / auto mode, add/view/remove whitelist blocks, and set the hotkey that opens the GUI (default `LEFT_ALT + B`). **malilib is optional** — without it, everything works through the commands only.
+On any supported version, if **malilib** is installed, the mod adds a config screen where you can toggle the mod / auto mode, enable sticky-piston support, add/view/remove whitelist blocks, set the hotkey that opens the GUI (default `LEFT_ALT + B`), and set the hotkey that toggles auto mode (unbound by default). **malilib is optional** — without it, everything works through the commands only.
 
 Three ways to open it:
 
@@ -82,7 +82,7 @@ The GUI reads/writes the same `config/bedrock-miner-extra.json` as the commands,
 
 ## Trigger conditions (all must hold)
 
-- The mined block is a **regular piston** (sticky pistons do not trigger);
+- The mined block is a **regular piston** by default; sticky pistons can be enabled from the malilib GUI.
 - The piston head faces **air** (it can extend);
 - A whitelisted block (bedrock) is adjacent to the piston — the fresh piston will face it;
 - The piston is currently **powered**, and the power source is a **lever** within 2 blocks (the lever is turned off right before the piston is mined, so the fresh piston is placed un-powered);
@@ -97,13 +97,30 @@ The GUI reads/writes the same `config/bedrock-miner-extra.json` as the commands,
 - The mod depends on the vanilla MC-27056 bug; if Mojang ever fixes it, the mod stops working.
 - On multiplayer servers, please ask other players first — the mod reminds you when you join a server with it enabled.
 
-## Changelog (1.3.0 → 2.4.1)
+## Changelog (1.3.0 → 2.5.3)
+
+### 2.5.3
+- Fixed automatic mining so the fastest available tool is kept after the short warm-up instead of falling back to slow mining when it is not instant.
+
+### 2.5.2
+- Added an action-bar message when the auto-mode hotkey toggles the mode.
+- Shortened the automatic mining warm-up to about 0.2 seconds before switching to the fastest pickaxe.
+- Added an opt-in malilib setting for sticky pistons; ordinary pistons are preferred whenever available.
+
+### 2.5.1
+- Fixed malilib auto-mode hotkey saving across GUI close/reopen and game restart.
+- Fixed whitelist recognition for standing and wall signs; manual sign breaking is supported. Automatic mode can still report insufficient space in constrained layouts, where manual mode remains available.
+
+### 2.5.0
+- Added Minecraft 26.3 build support.
+- Fixed full namespaced block IDs from whitelist command completion.
+- Added an optional auto-mode toggle hotkey to the malilib configuration screen.
 
 ### 2.4.1
 - **Mod Menu links fixed**: the "website / source / issues" buttons now point at the GitHub repo (via the `contact` field), plus a GitHub Releases link.
 
 ### 2.4.0
-- **Config GUI on every version (1.19.4–26.2)**: the malilib GUI, Mod Menu "config" entry and `/bedrockMinerExtra gui` now work on all supported versions (malilib stays optional — detected at runtime). Mod Menu now links to the GitHub project page ("website") and the issue tracker ("issues").
+- **Config GUI on every version (1.19.4–26.3)**: the malilib GUI, Mod Menu "config" entry and `/bedrockMinerExtra gui` now work on all supported versions (malilib stays optional — detected at runtime). Mod Menu now links to the GitHub project page ("website") and the issue tracker ("issues").
 
 ### 2.3.0
 - **Config GUI (malilib)**: toggle the mod / auto mode, edit the block whitelist and set the open-GUI hotkey from a malilib screen. **malilib and Mod Menu are optional** — detected at runtime; `/bedrockMinerExtra gui` opens the screen (a hotkey opens it too, default `LEFT_ALT + B`, changeable in the GUI).
@@ -160,13 +177,13 @@ The GUI reads/writes the same `config/bedrock-miner-extra.json` as the commands,
 
 ## Development
 
-Environment: JDK 26 (see `org.gradle.java.home` in `gradle.properties`), Gradle wrapper 9.5.1.
+Environment: JDK 26 (see `org.gradle.java.home` in `gradle.properties`), Gradle wrapper 9.6.0.
 
 ```bash
 ./gradlew build   # builds the active version (see stonecutter.gradle.kts)
 ```
 
-Version lock: Minecraft `26.1.2` + Fabric Loader `0.19.3` + Fabric API `0.155.2+26.1.2` + Loom `1.17-SNAPSHOT`.
+Version lock: Minecraft `26.1.2` + Fabric Loader `0.19.3` + Fabric API `0.155.2+26.1.2` + Loom `1.17.19`.
 
 ### Code structure
 
@@ -180,7 +197,7 @@ Version lock: Minecraft `26.1.2` + Fabric Loader `0.19.3` + Fabric API `0.155.2+
 
 One source tree, `//? if` conditional version differences, generated per version.
 
-- Build a specific version: `./gradlew :<version>:build` (e.g. `:1.21.11:build`, `:26.2:build`)
+- Build a specific version: `./gradlew :<version>:build` (e.g. `:1.21.11:build`, `:26.3:build`)
 - Build the active version: `./gradlew build` (active = `stonecutter active "26.1.2"` in `stonecutter.gradle.kts`)
 - Version list: `versions.json`; per-version dependencies in `stonecutter.properties.toml`
 - Output: `versions/<version>/build/libs/bedrock-miner-extra-<mod.version>+<mc>.jar`

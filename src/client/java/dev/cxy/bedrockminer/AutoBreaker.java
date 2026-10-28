@@ -66,6 +66,10 @@ public final class AutoBreaker {
 	private static final double RANGE = 5.0;
 	private static final int WAIT_EXTEND_MAX_TICKS = 40;
 	private static final int MINE_MAX_TICKS = 120;
+	// Four client ticks are about 0.2 seconds at 20 TPS. This short warm-up
+	// keeps the server above its 0.7 break-progress threshold before switching
+	// to the fastest pickaxe.
+	private static final int SLOW_MINE_WARMUP_TICKS = 4;
 	private static final int VERIFY_MAX_TICKS = 30;
 	private static final int CLEANUP_MAX_TICKS = 80;
 	private static final int MAX_RETRIES = 2;
@@ -231,7 +235,7 @@ public final class AutoBreaker {
 				// Send the rotation packet first; the server's yHeadRot only
 				// updates on the player entity tick (one-tick delay), so the
 				// piston is placed on the next tick to get the right facing.
-				if (!switchToItem(player, Blocks.PISTON.asItem())) {
+				if (!switchToPistonItem(player)) {
 					fail(level, player);
 					return;
 				}
@@ -247,7 +251,7 @@ public final class AutoBreaker {
 				// Verify the piston actually got placed (it may fail if the
 				// player stands on the slot). If not, remember the slot and
 				// search another face for this target.
-				if (level.getBlockState(pistonPos).is(Blocks.PISTON)) {
+				if (BedrockBreaker.isSupportedPiston(level.getBlockState(pistonPos))) {
 					if (needPlacePiston) {
 						rememberPlaced(placedPistons, pistonPos);
 					}
@@ -260,6 +264,11 @@ public final class AutoBreaker {
 			}
 			case PLACE_LEVER -> {
 				if (!needPlaceLever) {
+					if (!level.getBlockState(leverPos).is(Blocks.LEVER)) {
+						failedPistonSlots.add(pistonPos);
+						fail(level, player);
+						return;
+					}
 					state = needPowerLever ? State.POWER_LEVER : State.WAIT_EXTEND;
 					waitTicks = 0;
 					return;
@@ -279,6 +288,11 @@ public final class AutoBreaker {
 			}
 			case PLACE_LEVER2 -> {
 				placeLeverWithView(player, gameMode);
+				if (!level.getBlockState(leverPos).is(Blocks.LEVER)) {
+					failedPistonSlots.add(pistonPos);
+					fail(level, player);
+					return;
+				}
 				if (needPlaceLever) {
 					rememberPlaced(placedLevers, leverPos);
 				}
@@ -293,7 +307,14 @@ public final class AutoBreaker {
 				waitTicks = 0;
 			}
 			case WAIT_EXTEND -> {
-				if (level.getBlockState(pistonPos).is(Blocks.PISTON) && level.getBlockState(pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
+				BlockState leverState = level.getBlockState(leverPos);
+				if (!leverState.is(Blocks.LEVER)
+					|| (needPowerLever && !leverState.getValue(LeverBlock.POWERED))) {
+					failedPistonSlots.add(pistonPos);
+					fail(level, player);
+					return;
+				}
+				if (BedrockBreaker.isSupportedPiston(level.getBlockState(pistonPos)) && level.getBlockState(pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
 					// BedrockBreaker.LOGGER.info("auto: piston extended at {}", pistonPos);
 					state = State.MINE_ROTATE;
 				} else if (++waitTicks > WAIT_EXTEND_MAX_TICKS) {
@@ -340,7 +361,7 @@ public final class AutoBreaker {
 				// the bedrock is still there this attempt failed - don't keep
 				// mining the replacement piston.
 				BlockState pistonState = level.getBlockState(pistonPos);
-				if (!pistonState.is(Blocks.PISTON) || !pistonState.getValue(PistonBaseBlock.EXTENDED)) {
+				if (!BedrockBreaker.isSupportedPiston(pistonState) || !pistonState.getValue(PistonBaseBlock.EXTENDED)) {
 					// Mining finished (piston mined away / replacement placed):
 					// give the bedrock a few ticks to break, then check.
 					state = State.VERIFY;
@@ -369,20 +390,17 @@ public final class AutoBreaker {
 				}
 				boolean cdb = gameMode.continueDestroyBlock(pistonPos, Direction.UP);
 				// Finish fast: once progress is safely above the server's 0.7
-				// threshold (or after 0.2s of slow mining), switch to an
-				// instant pickaxe and let the client insta-mine. If the player
-				// has no instant pickaxe, switch back to the slow item and just
-				// mine it out (slow but reliable).
+				// threshold (or after 0.2s of slow mining), switch to the
+				// fastest available tool and keep it. Only an actually instant
+				// tool needs the explicit START packet below; an ordinary pickaxe
+				// can continue through the normal progress path at its own speed.
 				if (!instantFinishing
-					&& (((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$getDestroyProgress() >= 0.7F || mineTicks >= 4)) {
+					&& (((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$getDestroyProgress() >= 0.7F || mineTicks >= SLOW_MINE_WARMUP_TICKS)) {
 					if (switchToBestPickaxe(player)) {
+						instantFinishing = true;
 						if (speedWithEfficiency(player, player.getMainHandItem()) >= 15.0F) {
-							instantFinishing = true;
 							gameMode.startDestroyBlock(pistonPos, Direction.UP);
 							// BedrockBreaker.LOGGER.info("auto: instant finish (progress 0.7+ / 0.2s)");
-						} else {
-							// No instant pickaxe available: keep slow mining.
-							switchToSlowItem(player);
 						}
 					}
 				}
@@ -520,7 +538,7 @@ public final class AutoBreaker {
 		for (Direction face : dirs) {
 			BlockPos p = target.relative(face);
 			BlockState s = level.getBlockState(p);
-			if (!s.is(Blocks.PISTON)) {
+			if (!BedrockBreaker.isSupportedPiston(s)) {
 				continue;
 			}
 			Direction facing = s.getValue(PistonBaseBlock.FACING);
@@ -675,7 +693,16 @@ public final class AutoBreaker {
 	 * horizontal side of the piston. Never on the piston's extension face.
 	 */
 	private static LeverSpot findLeverSpot(Level level, BlockPos target, BlockPos pistonPos, Direction extendDir, List<Direction> dirs) {
+		BlockState targetState = level.getBlockState(target);
+		boolean targetCanCarryRedstone = targetState.isFaceSturdy(level, target, Direction.UP)
+			&& targetState.isRedstoneConductor(level, target);
 		for (Direction lv : dirs) {
+			// A sign is neither a sturdy support nor a redstone conductor. Do
+			// not right-click it while trying to place a lever, because that
+			// opens the sign editor instead of placing the lever.
+			if (!targetCanCarryRedstone) {
+				break;
+			}
 			BlockPos leverSlot = target.relative(lv);
 			if (leverSlot.equals(pistonPos) || leverSlot.equals(pistonPos.relative(extendDir))) {
 				continue;
@@ -684,6 +711,9 @@ public final class AutoBreaker {
 				continue;
 			}
 			if (!level.getBlockState(leverSlot).isAir()) {
+				continue;
+			}
+			if (!canAttachLever(level, leverSlot, lv.getOpposite(), true)) {
 				continue;
 			}
 			return new LeverSpot(leverSlot, lv.getOpposite());
@@ -710,6 +740,9 @@ public final class AutoBreaker {
 			if (!level.getBlockState(leverSlot).isAir()) {
 				continue;
 			}
+			if (!canAttachLever(level, leverSlot, Direction.DOWN, true)) {
+				continue;
+			}
 			return new LeverSpot(leverSlot, Direction.DOWN);
 		}
 		for (Direction lv : Direction.Plane.HORIZONTAL) {
@@ -723,9 +756,22 @@ public final class AutoBreaker {
 			if (!level.getBlockState(leverSlot).isAir()) {
 				continue;
 			}
+			if (!canAttachLever(level, leverSlot, lv.getOpposite(), false)) {
+				continue;
+			}
 			return new LeverSpot(leverSlot, lv.getOpposite());
 		}
 		return null;
+	}
+
+	/** Checks the same support face the vanilla lever placement code requires. */
+	private static boolean canAttachLever(Level level, BlockPos leverSlot, Direction attachDir, boolean requireConductor) {
+		BlockPos supportPos = leverSlot.relative(attachDir);
+		BlockState support = level.getBlockState(supportPos);
+		if (!support.isFaceSturdy(level, supportPos, attachDir.getOpposite())) {
+			return false;
+		}
+		return !requireConductor || support.isRedstoneConductor(level, supportPos);
 	}
 
 	/** True if the player's bounding box intersects the given block slot (a
@@ -849,6 +895,15 @@ public final class AutoBreaker {
 		return false;
 	}
 
+	/** Selects an ordinary piston first, then a sticky piston when opt-in is on. */
+	private static boolean switchToPistonItem(LocalPlayer player) {
+		if (switchToItem(player, Blocks.PISTON.asItem())) {
+			return true;
+		}
+		return BedrockBreaker.isStickyPistonAllowed()
+			&& switchToItem(player, Blocks.STICKY_PISTON.asItem());
+	}
+
 	/**
 	 * Switches to the hotbar item with the highest mining speed on pistons.
 	 * getDestroySpeed only reads the Tool component's base speed (it ignores
@@ -945,9 +1000,31 @@ public final class AutoBreaker {
 			state = State.IDLE;
 			return;
 		}
-	// Mine away the piston WE placed; for the lever, just flip it OFF (it is
-		// slow to mine and will be reused by the next attempt).
-		if (needPlacePiston && level.getBlockState(pistonPos).is(Blocks.PISTON)) {
+		// Remove a lever WE placed before removing its piston. Player-owned
+		// levers are never touched, and a failed placement cannot leave a
+		// powered source behind.
+		if (needPlaceLever && level.getBlockState(leverPos).is(Blocks.LEVER)) {
+			BlockState leverState = level.getBlockState(leverPos);
+			if (leverState.getValue(LeverBlock.POWERED)) {
+				useItemOn(gameMode, player, InteractionHand.MAIN_HAND,
+					new BlockHitResult(Vec3.atCenterOf(leverPos), Direction.UP, leverPos, false));
+				return;
+			}
+			if (!miningStarted) {
+				gameMode.stopDestroyBlock();
+				((MultiPlayerGameModeAccessor) gameMode).bedrockMinerExtra$setDestroyDelay(0);
+				if (!switchToBestPickaxe(player)) {
+					state = State.IDLE;
+					return;
+				}
+				miningStarted = true;
+			}
+			gameMode.startDestroyBlock(leverPos, Direction.UP);
+			gameMode.continueDestroyBlock(leverPos, Direction.UP);
+			return;
+		}
+		// Mine away the piston WE placed.
+		if (needPlacePiston && BedrockBreaker.isSupportedPiston(level.getBlockState(pistonPos))) {
 			if (!miningStarted) {
 				// Clear any leftover mining state (isDestroying / destroyDelay /
 				// destroyProgress) from the previous attempt, otherwise
@@ -1018,7 +1095,7 @@ public final class AutoBreaker {
 			}
 			gameMode.startDestroyBlock(piston, Direction.UP);
 			gameMode.continueDestroyBlock(piston, Direction.UP);
-			if (!level.getBlockState(piston).is(Blocks.PISTON)) {
+			if (!BedrockBreaker.isSupportedPiston(level.getBlockState(piston))) {
 				placedPistons.remove(piston);
 				miningStarted = false;
 			}
@@ -1060,7 +1137,7 @@ public final class AutoBreaker {
 	private static BlockPos firstUselessPlacedPiston(Level level) {
 		for (BlockPos pos : placedPistons) {
 			BlockState s = level.getBlockState(pos);
-			if (!s.is(Blocks.PISTON)) {
+			if (!BedrockBreaker.isSupportedPiston(s)) {
 				continue;
 			}
 			Direction head = s.getValue(PistonBaseBlock.FACING);
@@ -1095,7 +1172,7 @@ public final class AutoBreaker {
 	// ------------------------------------------------------------------
 
 	/** Shows a message above the hotbar (action bar), like vanilla sleep prompts. */
-	private static void showActionBar(String message) {
+	public static void showActionBar(String message) {
 		//? if >=1.19 {
 		Component text = Component.literal(message);
 		//?} else {

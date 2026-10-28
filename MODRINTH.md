@@ -16,7 +16,7 @@ A **client-side** Fabric mod that lets you break bedrock in survival using the *
 - Toggleable with `/bedrockMinerExtra`; the two switches are **linked** — turning the mod off also turns auto mode off, and turning auto mode on keeps the manual flow on
 - **Block whitelist**: add other blocks to break with the same trick
 - All status messages (success, no space, failure) are shown in the **action bar** (above the hotbar, like vanilla prompts), not the chat
-- **Config GUI (malilib, all versions)**: toggle the mod / auto mode, edit the whitelist and set the open-GUI hotkey — **optional**, detected at runtime (also reachable from **Mod Menu** and `/bedrockMinerExtra gui`)
+- **Config GUI (malilib, all versions)**: toggle the mod / auto mode, enable sticky-piston support, edit the whitelist and set both hotkeys — **optional**, detected at runtime (also reachable from **Mod Menu** and `/bedrockMinerExtra gui`)
 - Settings persisted to `config/bedrock-miner-extra.json`
 
 ## How to use
@@ -58,7 +58,7 @@ Default whitelist: `minecraft:bedrock`.
 
 ## Config GUI (malilib)
 
-On any supported version, if **malilib** is installed, the mod adds a config screen to toggle the mod / auto mode, add/view/remove whitelist blocks, and set the hotkey that opens the GUI (default `LEFT_ALT + B`). **malilib and Mod Menu are optional** — without them everything works through the commands only.
+On any supported version, if **malilib** is installed, the mod adds a config screen to toggle the mod / auto mode, enable sticky-piston support, add/view/remove whitelist blocks, set the hotkey that opens the GUI (default `LEFT_ALT + B`), and set the auto-mode toggle hotkey (unbound by default). **malilib and Mod Menu are optional** — without them everything works through the commands only.
 
 Open it with the hotkey, `/bedrockMinerExtra gui`, or **Mod Menu → Bedrock Miner Extra → Config**. It reads/writes the same `config/bedrock-miner-extra.json` as the commands.
 
@@ -73,7 +73,7 @@ Open it with the hotkey, `/bedrockMinerExtra gui`, or **Mod Menu → Bedrock Min
 
 ## Compatibility
 
-- Minecraft **26.2 / 26.1 / 26.1.2 / 1.21.11 / 1.21.1 / 1.21 / 1.20.6 / 1.20.5 / 1.20.1 / 1.19.4**, Fabric Loader ≥ 0.19.3, Fabric API. **1.18.2 and older are not supported** (no block-break prediction system before 1.19.3 — the headless trick there needs instant mining inside the retraction window, which conflicts with this mod's any-speed design).
+- Minecraft **26.3 / 26.2 / 26.1 / 26.1.2 / 1.21.11 / 1.21.1 / 1.21 / 1.20.6 / 1.20.5 / 1.20.1 / 1.19.4**, Fabric Loader ≥ 0.19.3, Fabric API. **1.18.2 and older are not supported** (no block-break prediction system before 1.19.3 — the headless trick there needs instant mining inside the retraction window, which conflicts with this mod's any-speed design).
 - **Optional**: malilib (config GUI, all versions) and Mod Menu (a "config" entry); both are detected at runtime and never required.
 - Client-side only; works in singleplayer, LAN, and on servers (the server does not need the mod installed)
 

@@ -102,9 +102,16 @@ public final class BedrockBreaker {
 	// Whether auto mode is enabled (toggled with /bedrockMinerExtra auto).
 	private static boolean autoEnabled = false;
 
+	// Sticky pistons are opt-in; default behavior remains ordinary pistons only.
+	private static boolean allowStickyPiston = false;
+
 	// Hotkey that opens the (malilib) config GUI; persisted so malilib can
-	// restore it. Only meaningful when malilib is present (26.x).
+	// restore it. Only meaningful when malilib is present.
 	private static String openGuiHotkey = "LEFT_ALT,B";
+
+	// Optional hotkey that toggles auto mode. It is configured through the
+	// optional malilib GUI and is unbound by default.
+	private static String autoToggleHotkey = "";
 
 	// Blocks that can be broken with the trick (default: bedrock only).
 	private static final Set<String> blockWhitelist = new LinkedHashSet<>(DEFAULT_WHITELIST);
@@ -191,6 +198,15 @@ public final class BedrockBreaker {
 		return autoEnabled;
 	}
 
+	public static boolean isStickyPistonAllowed() {
+		return allowStickyPiston;
+	}
+
+	public static void setStickyPistonAllowed(boolean value) {
+		allowStickyPiston = value;
+		saveConfig();
+	}
+
 	// ------------------------------------------------------------------
 	// Config GUI hotkey
 	// ------------------------------------------------------------------
@@ -200,7 +216,16 @@ public final class BedrockBreaker {
 	}
 
 	public static void setOpenGuiHotkey(String value) {
-		openGuiHotkey = value;
+		openGuiHotkey = value == null ? "" : value.trim();
+		saveConfig();
+	}
+
+	public static String getAutoToggleHotkey() {
+		return autoToggleHotkey;
+	}
+
+	public static void setAutoToggleHotkey(String value) {
+		autoToggleHotkey = value == null ? "" : value.trim();
 		saveConfig();
 	}
 
@@ -239,6 +264,13 @@ public final class BedrockBreaker {
 	}
 
 	private static String normalizeBlockId(String id) {
+		if (id == null) {
+			return null;
+		}
+		id = id.trim();
+		if (id.isEmpty()) {
+			return null;
+		}
 		//? if >=1.21.11 {
 		Identifier loc = id.indexOf(':') >= 0
 			? Identifier.tryParse(id)
@@ -259,7 +291,30 @@ public final class BedrockBreaker {
 	}
 
 	public static boolean isWhitelisted(Block block) {
-		return blockWhitelist.contains(blockRegistry().getKey(block).toString());
+		var key = blockRegistry().getKey(block);
+		return key != null && isWhitelistedId(key.toString());
+	}
+
+	/** Treat a standing sign and its wall sign as one whitelist entry. */
+	private static boolean isWhitelistedId(String id) {
+		if (blockWhitelist.contains(id)) {
+			return true;
+		}
+		int colon = id.indexOf(':');
+		String namespace = colon >= 0 ? id.substring(0, colon + 1) : "";
+		String path = colon >= 0 ? id.substring(colon + 1) : id;
+		if (path.endsWith("_hanging_sign") || path.endsWith("_wall_hanging_sign")) {
+			return false;
+		}
+		if (path.endsWith("_wall_sign")) {
+			String standing = namespace + path.substring(0, path.length() - "_wall_sign".length()) + "_sign";
+			return blockWhitelist.contains(standing);
+		}
+		if (path.endsWith("_sign")) {
+			String wall = namespace + path.substring(0, path.length() - "_sign".length()) + "_wall_sign";
+			return blockWhitelist.contains(wall);
+		}
+		return false;
 	}
 
 	/** The block registry (BuiltInRegistries.BLOCK on every supported version). */
@@ -281,14 +336,20 @@ public final class BedrockBreaker {
 				if (obj.has("autoEnabled")) {
 					autoEnabled = obj.get("autoEnabled").getAsBoolean();
 				}
+				if (obj.has("allowStickyPiston")) {
+					allowStickyPiston = obj.get("allowStickyPiston").getAsBoolean();
+				}
 				if (obj.has("openGuiHotkey")) {
-					openGuiHotkey = obj.get("openGuiHotkey").getAsString();
+					openGuiHotkey = obj.get("openGuiHotkey").getAsString().trim();
+				}
+				if (obj.has("autoToggleHotkey")) {
+					autoToggleHotkey = obj.get("autoToggleHotkey").getAsString().trim();
 				}
 				if (obj.has("blockWhitelist") && obj.get("blockWhitelist").isJsonArray()) {
 					blockWhitelist.clear();
 					for (JsonElement e : obj.getAsJsonArray("blockWhitelist")) {
-						String id = e.getAsString();
-						if (normalizeBlockId(id) != null) {
+						String id = normalizeBlockId(e.getAsString());
+						if (id != null) {
 							blockWhitelist.add(id);
 						}
 					}
@@ -308,7 +369,9 @@ public final class BedrockBreaker {
 			JsonObject obj = new JsonObject();
 			obj.addProperty("enabled", enabled);
 			obj.addProperty("autoEnabled", autoEnabled);
+			obj.addProperty("allowStickyPiston", allowStickyPiston);
 			obj.addProperty("openGuiHotkey", openGuiHotkey);
+			obj.addProperty("autoToggleHotkey", autoToggleHotkey);
 			JsonArray arr = new JsonArray();
 			for (String id : blockWhitelist) {
 				arr.add(id);
@@ -353,7 +416,7 @@ public final class BedrockBreaker {
 			return;
 		}
 		BlockState state = level.getBlockState(pos);
-		if (state.is(Blocks.PISTON)) {
+		if (isSupportedPiston(state)) {
 			LOGGER.info("Bedrock Miner Extra: mined piston detected at {} (state {})", pos, state);
 		}
 		Scene scene = capture(level, pos, state, true);
@@ -430,7 +493,7 @@ public final class BedrockBreaker {
 	// ------------------------------------------------------------------
 
 	private static Scene capture(Level level, BlockPos pos, BlockState state, boolean log) {
-		if (!state.is(Blocks.PISTON)) {
+		if (!isSupportedPiston(state)) {
 			return null;
 		}
 
@@ -601,7 +664,23 @@ public final class BedrockBreaker {
 		if (inventory.getItem(40).is(Blocks.PISTON.asItem())) {
 			return InteractionHand.OFF_HAND;
 		}
+		if (allowStickyPiston) {
+			for (int i = 0; i < Inventory.getSelectionSize(); i++) {
+				if (inventory.getItem(i).is(Blocks.STICKY_PISTON.asItem())) {
+					((InventoryAccessor) inventory).bedrockMinerExtra$setSelected(i);
+					player.connection.send(new ServerboundSetCarriedItemPacket(i));
+					return InteractionHand.MAIN_HAND;
+				}
+			}
+			if (inventory.getItem(40).is(Blocks.STICKY_PISTON.asItem())) {
+				return InteractionHand.OFF_HAND;
+			}
+		}
 		return null;
+	}
+
+	public static boolean isSupportedPiston(BlockState state) {
+		return state.is(Blocks.PISTON) || (allowStickyPiston && state.is(Blocks.STICKY_PISTON));
 	}
 
 	private static void placePiston(MultiPlayerGameMode gameMode, LocalPlayer player, Scene scene, InteractionHand hand) {

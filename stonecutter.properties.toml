@@ -1,7 +1,7 @@
 mod.id = "bedrock-miner-extra"
 mod.name = "Bedrock-Miner-Extra"
 mod.group = "dev.cxy"
-mod.version = "2.4.1"
+mod.version = "2.5.3"
 
 deps.fabric_loader = "0.19.3"
 
@@ -66,15 +66,15 @@ mod.mc_releases = ["1.21.11"]
 deps.fabric_api = "0.141.6+1.21.11"
 deps.mod_menu = "17.0.0"
 deps.malilib_mc = "1.21.11"
-deps.malilib = "0.27.16"
+deps.malilib = "0.27.19"
 
 ["26.1"]
 mod.mc_compat = "26.1"
 mod.mc_releases = ["26.1"]
 
 deps.fabric_api = "0.155.2+26.1.2"
-deps.malilib_mc = "26.1"
-deps.malilib = "0.28.1"
+deps.malilib_mc = "26.1.2"
+deps.malilib = "0.28.11"
 deps.mod_menu = "18.0.0"
 
 ["26.1.2"]
@@ -83,7 +83,7 @@ mod.mc_releases = ["26.1.2"]
 
 deps.fabric_api = "0.155.2+26.1.2"
 deps.malilib_mc = "26.1.2"
-deps.malilib = "0.28.9"
+deps.malilib = "0.28.11"
 deps.mod_menu = "18.0.0"
 
 ["26.2"]
@@ -92,5 +92,14 @@ mod.mc_releases = ["26.2"]
 
 deps.fabric_api = "0.157.0+26.2"
 deps.malilib_mc = "26.2"
-deps.malilib = "0.29.3"
+deps.malilib = "0.29.5"
 deps.mod_menu = "20.0.1"
+
+["26.3"]
+mod.mc_compat = "26.3"
+mod.mc_releases = ["26.3"]
+
+deps.fabric_api = "0.165.0+26.3"
+deps.malilib_mc = "26.3"
+deps.malilib = "0.30.1"
+deps.mod_menu = "21.0.0"
